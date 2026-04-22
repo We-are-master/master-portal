@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import { PortalLoginClient } from "./portal-login-client";
 
 export const metadata = {
-  title: "Portal — Sign In | Master",
-  description: "Sign in to the Master account portal",
+  title: "Fixfy · Sign In",
+  description: "Sign in to the Fixfy maintenance portal",
 };
 
 export default function PortalLoginPage() {
@@ -11,10 +11,10 @@ export default function PortalLoginPage() {
     <Suspense
       fallback={
         <div
-          className="min-h-screen flex items-center justify-center"
-          style={{ background: "linear-gradient(160deg,#020034 0%,#0D006E 55%,#E94A02 100%)" }}
+          style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--navy)" }}
         >
-          <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+          <div style={{ width: 40, height: 40, border: "3px solid rgba(255,255,255,0.15)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       }
     >

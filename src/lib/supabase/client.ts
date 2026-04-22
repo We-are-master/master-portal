@@ -16,6 +16,8 @@ export function createClient(): SupabaseClient {
       "Supabase env missing. In Vercel: add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY, and enable them for **Build** (Settings → Environment Variables)."
     );
   }
-  cachedClient = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  cachedClient = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookieOptions: { name: "sb-portal" },
+  });
   return cachedClient;
 }

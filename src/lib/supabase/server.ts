@@ -17,6 +17,9 @@ export async function createClient() {
     url,
     anonKey,
     {
+      cookieOptions: {
+        name: "sb-portal",
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll();

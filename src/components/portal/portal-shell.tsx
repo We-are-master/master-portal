@@ -1,17 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  LayoutDashboard, FileText, ClipboardList, Briefcase, Receipt,
-  MessageSquare, Settings, LogOut, Menu, X, Sun, Moon,
-} from "lucide-react";
+import { Icon } from "./icons";
 import { PortalNotificationBell } from "./portal-notification-bell";
 
 interface PortalShellProps {
   accountName: string;
+  accountType?: string;
   userEmail: string;
   userFullName: string | null;
   portalUserId: string;
@@ -19,231 +16,208 @@ interface PortalShellProps {
   children: React.ReactNode;
 }
 
-const NAV_ITEMS = [
-  { href: "/",          label: "Dashboard", icon: LayoutDashboard },
-  { href: "/requests", label: "Requests",  icon: ClipboardList   },
-  { href: "/quotes",   label: "Quotes",    icon: FileText        },
-  { href: "/jobs",     label: "Jobs",      icon: Briefcase       },
-  { href: "/invoices", label: "Invoices",  icon: Receipt         },
-  { href: "/tickets",  label: "Tickets",   icon: MessageSquare   },
-  { href: "/settings", label: "Settings",  icon: Settings        },
+const NAV = [
+  {
+    group: "OPERATIONS",
+    items: [
+      { href: "/", icon: "dashboard", label: "Dashboard" },
+      { href: "/requests", icon: "requests", label: "Requests", count: "3" },
+      { href: "/jobs", icon: "jobs", label: "Jobs", count: "9" },
+      { href: "/quotes", icon: "quotes", label: "Quotes & Approvals", count: "2", warn: true },
+    ],
+  },
+  {
+    group: "PORTFOLIO",
+    items: [
+      { href: "/sites", icon: "sites", label: "Sites" },
+      { href: "/compliance", icon: "compliance", label: "Compliance", count: "2", warn: true },
+    ],
+  },
+  {
+    group: "RECORDS",
+    items: [
+      { href: "/reports", icon: "reports", label: "Reports" },
+      { href: "/invoices", icon: "invoices", label: "Invoices" },
+      { href: "/documents", icon: "documents", label: "Documents" },
+    ],
+  },
+  {
+    group: "ADMIN",
+    items: [
+      { href: "/team", icon: "team", label: "Team & Users" },
+      { href: "/notifications", icon: "notifications", label: "Notifications", count: "3", warn: true },
+      { href: "/settings", icon: "settings", label: "Settings" },
+    ],
+  },
 ];
 
-function usePortalTheme() {
-  const [resolved, setResolved] = useState<"light" | "dark">("light");
+const BREADCRUMB_MAP: Record<string, [string, string]> = {
+  "/": ["Operations", "Dashboard"],
+  "/requests": ["Operations", "Requests"],
+  "/jobs": ["Operations", "Jobs"],
+  "/quotes": ["Operations", "Quotes & Approvals"],
+  "/sites": ["Portfolio", "Sites"],
+  "/compliance": ["Portfolio", "Compliance"],
+  "/reports": ["Records", "Reports"],
+  "/invoices": ["Records", "Invoices"],
+  "/documents": ["Records", "Documents"],
+  "/team": ["Admin", "Team & Users"],
+  "/notifications": ["Admin", "Notifications"],
+  "/settings": ["Admin", "Settings"],
+};
 
-  useEffect(() => {
-    const stored = typeof window !== "undefined"
-      ? (localStorage.getItem("master-os-theme") as "light" | "dark" | "system" | null)
-      : null;
-    const initial = stored ?? "system";
-    const sysIsDark = typeof window !== "undefined"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-      : false;
-    const r: "light" | "dark" = initial === "system" ? (sysIsDark ? "dark" : "light") : initial;
-    queueMicrotask(() => {
-      setResolved(r);
-      document.documentElement.classList.toggle("dark", r === "dark");
-    });
-  }, []);
-
-  const toggle = useCallback(() => {
-    setResolved((cur) => {
-      const next = cur === "dark" ? "light" : "dark";
-      document.documentElement.classList.toggle("dark", next === "dark");
-      try { localStorage.setItem("master-os-theme", next); } catch { /* ignore */ }
-      return next;
-    });
-  }, []);
-
-  return { resolved, toggle };
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  }
+  return email.slice(0, 2).toUpperCase();
 }
 
-function NavList({ onItemClick, isActive }: { onItemClick?: () => void; isActive: (href: string) => boolean }) {
-  return (
-    <nav className="flex-1 p-4 space-y-0.5">
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-        const active = isActive(href);
-        return (
-          <Link
-            key={href}
-            href={href}
-            onClick={onItemClick}
-            className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              active
-                ? "text-primary"
-                : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            }`}
-          >
-            {active && (
-              <motion.span
-                layoutId="portal-sidebar-active"
-                className="absolute inset-0 rounded-lg bg-primary-50 dark:bg-primary-700/15"
-                transition={{ type: "spring", stiffness: 380, damping: 30 }}
-              />
-            )}
-            <Icon className="relative w-4 h-4 shrink-0" />
-            <span className="relative">{label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-export function PortalShell({ accountName, userEmail, userFullName, portalUserId, accountId, children }: PortalShellProps) {
+export function PortalShell({
+  accountName,
+  accountType = "Business",
+  userEmail,
+  userFullName,
+  portalUserId,
+  accountId,
+  children,
+}: PortalShellProps) {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const { resolved, toggle } = usePortalTheme();
+  const [roleOpen, setRoleOpen] = useState(false);
+  const initials = getInitials(userFullName, userEmail);
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   };
 
+  const crumbs = BREADCRUMB_MAP[pathname] ?? BREADCRUMB_MAP[
+    Object.keys(BREADCRUMB_MAP).find((k) => k !== "/" && pathname.startsWith(k)) ?? "/"
+  ] ?? ["—", "—"];
+
   return (
-    <div className="min-h-screen flex bg-surface-secondary text-text-primary">
-      {/* Sidebar — desktop */}
-      <aside className="hidden lg:flex w-64 bg-card border-r border-border flex-col">
-        <div className="p-6 border-b border-border-light">
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="flex items-center gap-3"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="https://wearemaster.com/favicon.png"
-              alt="Master"
-              className="w-9 h-9 object-contain"
-            />
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">Master</p>
-              <p className="text-sm font-bold text-text-primary truncate">{accountName || "Portal"}</p>
-            </div>
-          </motion.div>
+    <div className="app">
+      {/* ── Sidebar ───────────────────────────────────── */}
+      <aside className="sidebar">
+        <div className="sb-brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="https://wearemaster.com/favicon.png" alt="Fixfy" style={{ height: 22 }} />
+          <span style={{ color: "#fff", fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>fixfy</span>
+          <span className="env">UK</span>
         </div>
 
-        <NavList isActive={isActive} />
-
-        <div className="p-4 border-t border-border-light">
-          <div className="px-3 py-2 mb-2">
-            <p className="text-xs font-semibold text-text-primary truncate">{userFullName || userEmail}</p>
-            <p className="text-xs text-text-tertiary truncate">{userEmail}</p>
-          </div>
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            type="button"
-            onClick={toggle}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors mb-1"
-          >
-            {resolved === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            {resolved === "dark" ? "Light mode" : "Dark mode"}
-          </motion.button>
-          <form action="/api/auth/sign-out" method="POST">
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              type="submit"
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-hover hover:text-red-600 transition-colors"
+        {/* Role / account switcher */}
+        <div className="sb-role" style={{ position: "relative" }}>
+          <button className="sb-role-btn" onClick={() => setRoleOpen(!roleOpen)} type="button">
+            <div className="rs-avatar">{initials}</div>
+            <div className="rs-meta">
+              <div className="rs-name">{accountName || "Portal"}</div>
+              <div className="rs-company">{accountType}</div>
+            </div>
+            <div className="rs-caret"><Icon name="down" size={10} /></div>
+          </button>
+          {roleOpen && (
+            <div
+              style={{
+                position: "absolute", top: "100%", left: 14, right: 14,
+                background: "#fff", border: "1px solid var(--line)", borderRadius: 6,
+                zIndex: 10, boxShadow: "0 8px 32px rgba(2,0,64,0.18)", marginTop: 4, overflow: "hidden",
+              }}
             >
-              <LogOut className="w-4 h-4" />
-              Sign out
-            </motion.button>
-          </form>
+              <div
+                style={{
+                  padding: "12px 14px", display: "flex", gap: 10, alignItems: "center",
+                  borderBottom: "1px solid var(--line)", background: "var(--slate-10)",
+                }}
+              >
+                <div style={{
+                  width: 30, height: 30, borderRadius: "50%", background: "var(--navy)",
+                  color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "var(--mono)", fontSize: 11, fontWeight: 500, flexShrink: 0,
+                }}>{initials}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{accountName}</div>
+                  <div style={{ fontSize: 11, color: "var(--slate-50)" }}>{accountType}</div>
+                </div>
+                <div style={{ color: "var(--coral)" }}><Icon name="check" size={14} /></div>
+              </div>
+              <form action="/api/auth/sign-out" method="POST">
+                <button
+                  type="submit"
+                  style={{
+                    width: "100%", padding: "10px 14px", fontSize: 12, color: "var(--red)",
+                    textAlign: "left", cursor: "pointer", background: "none", border: "none",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Sign out
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* Search */}
+        <div className="sb-search">
+          <div className="ic"><Icon name="search" size={13} /></div>
+          <input placeholder="Search jobs, sites, invoices…" />
+          <span className="kbd">⌘K</span>
+        </div>
+
+        {/* Navigation */}
+        <nav className="sb-nav">
+          {NAV.map((grp) => (
+            <div key={grp.group}>
+              <div className="sb-group-lbl">{grp.group}</div>
+              {grp.items.map((it) => (
+                <Link
+                  key={it.href}
+                  href={it.href}
+                  className={`sb-item${isActive(it.href) ? " active" : ""}`}
+                >
+                  <div className="sb-ic"><Icon name={it.icon} size={14} /></div>
+                  <span>{it.label}</span>
+                  {it.count && (
+                    <span className={`sb-count${it.warn ? " warn" : ""}`}>{it.count}</span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="sb-bottom">
+          <div className="dot" />
+          <span>All systems operational</span>
+          <span style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>v3.4.1</span>
         </div>
       </aside>
 
-      {/* Mobile sidebar drawer */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <div className="lg:hidden fixed inset-0 z-50">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute inset-0 bg-black/50"
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 34 }}
-              className="absolute left-0 top-0 bottom-0 w-72 bg-card flex flex-col"
-            >
-              <div className="p-5 border-b border-border-light flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="https://wearemaster.com/favicon.png" alt="Master" className="w-9 h-9 object-contain" />
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">Master</p>
-                    <p className="text-sm font-bold text-text-primary truncate">{accountName || "Portal"}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen(false)}
-                  className="p-2 rounded-lg hover:bg-surface-hover"
-                >
-                  <X className="w-5 h-5 text-text-tertiary" />
-                </button>
-              </div>
-              <NavList isActive={isActive} onItemClick={() => setMobileOpen(false)} />
-              <div className="p-4 border-t border-border-light">
-                <div className="px-3 py-2 mb-2">
-                  <p className="text-xs font-semibold text-text-primary truncate">{userFullName || userEmail}</p>
-                  <p className="text-xs text-text-tertiary truncate">{userEmail}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={toggle}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors mb-1"
-                >
-                  {resolved === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                  {resolved === "dark" ? "Light mode" : "Dark mode"}
-                </button>
-                <form action="/api/auth/sign-out" method="POST">
-                  <button
-                    type="submit"
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-hover hover:text-red-600 transition-colors"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Sign out
-                  </button>
-                </form>
-              </div>
-            </motion.aside>
+      {/* ── Main ─────────────────────────────────────── */}
+      <div className="main">
+        <header className="topbar">
+          <div className="crumbs">
+            <span>{accountName}</span>
+            <span className="sep">/</span>
+            <span>{crumbs[0]}</span>
+            <span className="sep">/</span>
+            <b>{crumbs[1]}</b>
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile top bar */}
-        <header className="lg:hidden bg-card/80 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3 sticky top-0 z-30">
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            className="p-2 rounded-lg hover:bg-surface-hover"
-          >
-            <Menu className="w-5 h-5 text-text-secondary" />
+          <div className="spacer" />
+          <button className="topbar-icon" type="button" title="Help">
+            <Icon name="help" size={15} />
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="https://wearemaster.com/favicon.png" alt="Master" className="w-7 h-7 object-contain" />
-          <p className="text-sm font-bold text-text-primary truncate flex-1">{accountName || "Portal"}</p>
           <PortalNotificationBell portalUserId={portalUserId} accountId={accountId} />
+          <div className="topbar-user">
+            <div className="ava">{initials}</div>
+            <div>
+              <div className="n">{userFullName || userEmail}</div>
+              <div className="r">{accountType}</div>
+            </div>
+          </div>
         </header>
 
-        {/* Desktop top bar */}
-        <header className="hidden lg:flex bg-card/80 backdrop-blur-md border-b border-border px-6 py-2.5 items-center justify-end gap-2 sticky top-0 z-30">
-          <PortalNotificationBell portalUserId={portalUserId} accountId={accountId} />
-        </header>
-
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-          {children}
-        </main>
+        {children}
       </div>
     </div>
   );

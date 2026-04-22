@@ -37,21 +37,24 @@ export function useAccountScopedRealtime(opts: {
 
   const { table, filter, event = "*", channelSuffix = "", enabled = true } = opts;
 
+  const mountId = useRef(Math.random().toString(36).slice(2, 8));
+
   useEffect(() => {
     if (!enabled) return;
     const supabase = getSupabase();
-    const channelName = `portal-${table}${channelSuffix ? `-${channelSuffix}` : ""}-${filter ?? "all"}`;
-    const channel = supabase.channel(channelName);
+    const channelName = `portal-${table}-${mountId.current}-${channelSuffix || "x"}-${filter ?? "all"}`;
 
-    channel.on(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      "postgres_changes" as any,
-      { event, schema: "public", table, filter },
-      (payload: { eventType: string; new: AnyRow; old: AnyRow }) => {
-        handlerRef.current(payload);
-      },
-    );
-    channel.subscribe();
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "postgres_changes" as any,
+        { event, schema: "public", table, filter },
+        (payload: { eventType: string; new: AnyRow; old: AnyRow }) => {
+          handlerRef.current(payload);
+        },
+      )
+      .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);

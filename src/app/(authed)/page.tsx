@@ -1,204 +1,277 @@
-import Link from "next/link";
-import { ClipboardList, FileText, Briefcase, Receipt, ArrowRight, Sparkles } from "lucide-react";
-import { requirePortalUserOrRedirect } from "@/lib/portal-auth";
-import { fetchPortalDashboardKpis } from "@/lib/server-fetchers/portal-dashboard";
-import { formatCurrency } from "@/lib/utils";
-import { PortalPage, PortalStagger, PortalListItem } from "@/components/portal/portal-motion";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { Icon } from "@/components/portal/icons";
 
-const STATUS_LABEL: Record<string, string> = {
-  new:                  "New",
-  in_review:            "In review",
-  qualified:            "Qualified",
-  awaiting_customer:    "Awaiting your response",
-  accepted:             "Accepted",
-  rejected:             "Rejected",
-  scheduled:            "Scheduled",
-  in_progress_phase1:   "In progress",
-  in_progress_phase2:   "In progress",
-  in_progress_phase3:   "In progress",
-  final_check:          "Final check",
-  awaiting_payment:     "Awaiting payment",
-  completed:            "Completed",
-  pending:              "Pending",
-  partially_paid:       "Partially paid",
-  paid:                 "Paid",
-  overdue:              "Overdue",
-};
+/* ── Mock data (will be replaced with real Supabase fetchers) ─── */
+const KPIS = [
+  { label: "Open Requests", value: "14", trend: "up", trendTxt: "+3 this week" },
+  { label: "Jobs in Progress", value: "9", trend: "flat", trendTxt: "Stable" },
+  { label: "Quotes Awaiting", value: "2", trend: "up", trendTxt: "Action needed", coral: true },
+  { label: "Overdue Jobs", value: "1", trend: "down", trendTxt: "↓ from 3" },
+  { label: "Spend This Month", value: "£28,420", trend: "up", trendTxt: "↑ 8% vs Mar" },
+  { label: "Emergency Jobs", value: "3", trend: "flat", trendTxt: "This month" },
+  { label: "Completed", value: "41", trend: "up", trendTxt: "↑ 12% MoM" },
+  { label: "Avg. Completion", value: "3.2d", trend: "up", trendTxt: "↑ faster" },
+];
 
-function statusLabel(s: string) { return STATUS_LABEL[s] ?? s.replace(/_/g, " "); }
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(ms / 60000);
-  if (min < 1)  return "just now";
-  if (min < 60) return `${min}m ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24)   return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30)   return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
+const FEED = [
+  { t: "3 min ago", dot: "coral", ic: "●", body: "Engineer Marcus R. arrived on site at Flat 4, 52 Marylebone Lane for JOB-2481" },
+  { t: "28 min ago", dot: "amber", ic: "£", body: "Quote submitted: £485.00 for EICR inspection at 14 Exmouth Market — awaiting your approval" },
+  { t: "1h 12m ago", dot: "green", ic: "✓", body: "Completion report uploaded for JOB-2474 · Blocked kitchen drain (28A Cromwell Road)" },
+  { t: "2h ago", dot: "blue", ic: "@", body: "Sasha Patel sent an update on JOB-2459: \"Booked for Friday morning, will call ahead\"" },
+  { t: "Today · 09:02", dot: "coral", ic: "£", body: "Invoice FX-INV-4421 issued — £280.00 for Post-tenancy deep clean (18 Crawford Street)" },
+  { t: "Yesterday · 17:20", dot: "green", ic: "✓", body: "Job JOB-2474 completed · 2h 06m on site · photos attached" },
+  { t: "Yesterday · 16:40", dot: "green", ic: "✓", body: "Quote approved by Priya Nair: £620.00 for glazing replacement at Pelham Place" },
+];
 
-export default async function PortalDashboardPage() {
-  const auth = await requirePortalUserOrRedirect();
-  const kpis = await fetchPortalDashboardKpis(auth.accountId);
+const SPEND = [
+  { n: "Heating & Gas", pct: 82, v: "£6,840" },
+  { n: "Electrical", pct: 68, v: "£5,720" },
+  { n: "Plumbing", pct: 54, v: "£4,490" },
+  { n: "Compliance", pct: 48, v: "£3,980" },
+  { n: "Handyman", pct: 38, v: "£3,180" },
+  { n: "Cleaning", pct: 22, v: "£1,840" },
+  { n: "Locks & Access", pct: 18, v: "£1,520" },
+];
 
-  const greeting = (() => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 18) return "Good afternoon";
-    return "Good evening";
-  })();
-  const firstName = auth.portalUser.full_name?.split(" ")[0] || "there";
+const TOP_SITES = [
+  { n: "Office, 14 Exmouth Market", s: "EC1R 4QE · Islington", v: "£8,420", rag: "r" },
+  { n: "Communal, Queen's Gate", s: "SW7 5HW · Kensington", v: "£5,240", rag: "a" },
+  { n: "Flat 4, 52 Marylebone Lane", s: "W1U 2NH · Marylebone", v: "£3,180", rag: "a" },
+  { n: "Shopfront, 42 Upper Street", s: "N1 0PN · Islington", v: "£2,440", rag: "g" },
+];
+
+const CHART = [
+  { c: 8 }, { c: 11 }, { c: 9 }, { c: 14 }, { c: 12 }, { c: 16 },
+  { c: 9 }, { c: 18 }, { c: 22 }, { c: 15 }, { c: 24 }, { c: 19 },
+];
+
+const MAP_PINS = [
+  { x: 18, y: 42, s: "g" }, { x: 22, y: 38, s: "a" }, { x: 28, y: 46, s: "g" }, { x: 32, y: 40, s: "g" },
+  { x: 34, y: 50, s: "r" }, { x: 38, y: 44, s: "g" }, { x: 42, y: 48, s: "g" }, { x: 46, y: 52, s: "g" },
+  { x: 50, y: 46, s: "a" }, { x: 54, y: 42, s: "g" }, { x: 58, y: 50, s: "g" }, { x: 62, y: 44, s: "g" },
+  { x: 66, y: 48, s: "g" }, { x: 70, y: 40, s: "a" }, { x: 74, y: 46, s: "g" },
+];
+
+export default function DashboardPage() {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <PortalPage className="max-w-6xl mx-auto space-y-8">
-      {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-8 sm:p-10">
-        <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-primary/10 blur-3xl" aria-hidden />
-        <div className="relative">
-          <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-primary uppercase tracking-wider mb-2">
-            <Sparkles className="w-3 h-3" />
-            Master portal
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-black text-text-primary tracking-tight">
-            {greeting}, {firstName}
-          </h1>
-          <p className="text-sm text-text-secondary mt-2 max-w-xl">
-            Track requests, quotes, live jobs and invoices in one place. We&rsquo;ll let you know the moment something needs your attention.
+    <div className="page">
+      {/* Header */}
+      <div className="page-hdr">
+        <div>
+          <div className="kicker">{dateStr}</div>
+          <h1>Good afternoon, Priya.</h1>
+          <p className="sub">
+            You have <b style={{ color: "var(--coral-600)" }}>2 quotes awaiting approval</b> and <b>1 overdue job</b>. Everything else is on track.
           </p>
         </div>
+        <div className="actions">
+          <button className="btn btn-ghost btn-sm"><Icon name="download" size={13} /> Export snapshot</button>
+          <button className="btn btn-primary"><Icon name="plus" size={13} /> New request</button>
+        </div>
       </div>
 
-      {/* KPI tiles */}
-      <PortalStagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <PortalListItem>
-          <KpiCard
-            href="/requests"
-            label="Open requests"
-            value={kpis.openRequests.toString()}
-            icon={<ClipboardList className="w-5 h-5" />}
-            tone="sky"
-          />
-        </PortalListItem>
-        <PortalListItem>
-          <KpiCard
-            href="/quotes"
-            label="Awaiting response"
-            value={kpis.pendingQuotes.toString()}
-            icon={<FileText className="w-5 h-5" />}
-            tone="amber"
-          />
-        </PortalListItem>
-        <PortalListItem>
-          <KpiCard
-            href="/jobs"
-            label="Jobs in progress"
-            value={kpis.jobsInProgress.toString()}
-            icon={<Briefcase className="w-5 h-5" />}
-            tone="emerald"
-          />
-        </PortalListItem>
-        <PortalListItem>
-          <KpiCard
-            href="/invoices"
-            label="Outstanding"
-            value={formatCurrency(kpis.outstandingInvoices.total)}
-            sublabel={`${kpis.outstandingInvoices.count} unpaid`}
-            icon={<Receipt className="w-5 h-5" />}
-            tone="rose"
-          />
-        </PortalListItem>
-      </PortalStagger>
+      {/* KPI grid */}
+      <div className="kpi-grid">
+        {KPIS.map((k, i) => (
+          <div key={i} className="kpi">
+            <span className="label">{k.label}</span>
+            <div className={`value${k.coral ? " coral" : ""}`}>{k.value}</div>
+            <div className={`trend ${k.trend}`}>{k.trendTxt}</div>
+          </div>
+        ))}
+      </div>
 
-      {/* Recent activity */}
-      <section className="bg-card rounded-2xl border border-border p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-base font-bold text-text-primary">Recent activity</h2>
-            <p className="text-xs text-text-tertiary mt-0.5">Last updates across your account.</p>
+      {/* Map + Urgent actions */}
+      <div className="split-2-1 mt-20">
+        <div className="block">
+          <div className="block-hdr">
+            <div>
+              <h3>Portfolio map</h3>
+              <div className="sub">42 sites · 14 active · 1 overdue</div>
+            </div>
+            <div className="actions">
+              <span className="filter-chip">All branches <Icon name="down" size={10} /></span>
+              <button className="btn btn-ghost btn-sm">View all</button>
+            </div>
           </div>
-          <Link
-            href="/portal/requests?new=1"
-            className="text-xs font-semibold text-primary hover:text-primary-hover inline-flex items-center gap-1"
-          >
-            New request <ArrowRight className="w-3 h-3" />
-          </Link>
-        </div>
-        {kpis.recentActivity.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-sm text-text-tertiary mb-4">No recent activity yet.</p>
-            <Link
-              href="/portal/requests?new=1"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors shadow-sm shadow-primary/20"
-            >
-              Create your first request
-            </Link>
-          </div>
-        ) : (
-          <PortalStagger className="divide-y divide-border-light">
-            {kpis.recentActivity.map((item) => (
-              <PortalListItem key={`${item.type}-${item.id}`}>
-                <div className="py-3 flex items-center justify-between gap-4 -mx-2 px-2 rounded-lg hover:bg-surface-hover transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                      item.type === "request" ? "bg-sky-50 text-sky-600 dark:bg-sky-950/30 dark:text-sky-400" :
-                      item.type === "quote"   ? "bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400" :
-                                                "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400"
-                    }`}>
-                      {item.type === "request" ? <ClipboardList className="w-4 h-4" /> :
-                       item.type === "quote"   ? <FileText className="w-4 h-4" /> :
-                                                 <Briefcase className="w-4 h-4" />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-text-primary truncate">{item.title}</p>
-                      <p className="text-xs text-text-secondary">
-                        <span className="font-mono">{item.reference}</span> · {statusLabel(item.status)}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs text-text-tertiary shrink-0">{timeAgo(item.created_at)}</span>
+          <div style={{ padding: 14 }}>
+            <div className="map">
+              <svg className="map-svg" viewBox="0 0 800 280" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.7 }}>
+                <defs>
+                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+                  </pattern>
+                </defs>
+                <rect width="800" height="280" fill="url(#grid)" />
+                <path d="M0,170 Q120,130 200,155 T400,150 T600,165 T800,150" stroke="rgba(100,180,255,0.15)" strokeWidth="22" fill="none" />
+                <path d="M0,170 Q120,130 200,155 T400,150 T600,165 T800,150" stroke="rgba(100,180,255,0.3)" strokeWidth="1.5" fill="none" />
+                <circle cx="260" cy="110" r="55" fill="rgba(255,255,255,0.03)" />
+                <circle cx="420" cy="130" r="70" fill="rgba(255,255,255,0.03)" />
+                <circle cx="560" cy="100" r="50" fill="rgba(255,255,255,0.03)" />
+                <text x="260" y="78" fill="rgba(255,255,255,0.3)" fontSize="10" textAnchor="middle" fontFamily="var(--mono)">MARYLEBONE · 24</text>
+                <text x="420" y="90" fill="rgba(255,255,255,0.3)" fontSize="10" textAnchor="middle" fontFamily="var(--mono)">ISLINGTON · 9</text>
+                <text x="560" y="60" fill="rgba(255,255,255,0.3)" fontSize="10" textAnchor="middle" fontFamily="var(--mono)">KENSINGTON · 9</text>
+              </svg>
+              {MAP_PINS.map((pin, i) => (
+                <div key={i} className="map-pin" style={{ left: `${pin.x}%`, top: `${pin.y}%` }}>
+                  <div className={`p ${pin.s}`} />
                 </div>
-              </PortalListItem>
-            ))}
-          </PortalStagger>
-        )}
-      </section>
-    </PortalPage>
-  );
-}
+              ))}
+              <div className="map-legend">
+                <div className="lg"><div className="d" style={{ background: "var(--green)" }} /> On track · 37</div>
+                <div className="lg"><div className="d" style={{ background: "var(--amber)" }} /> Attention · 4</div>
+                <div className="lg"><div className="d" style={{ background: "var(--red)" }} /> Overdue · 1</div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-interface KpiCardProps {
-  href: string;
-  label:    string;
-  value:    string;
-  sublabel?: string;
-  icon:     React.ReactNode;
-  tone: "sky" | "amber" | "emerald" | "rose";
-}
-
-function KpiCard({ href, label, value, sublabel, icon, tone }: KpiCardProps) {
-  const toneClass = {
-    sky: "bg-sky-50 text-sky-600 dark:bg-sky-950/30 dark:text-sky-400",
-    amber: "bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400",
-    emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400",
-    rose: "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400",
-  }[tone];
-
-  return (
-    <Link
-      href={href}
-      className="group block bg-card rounded-2xl border border-border p-5 transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-border-light"
-    >
-      <div className="flex items-start justify-between mb-3">
-        <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">{label}</span>
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 ${toneClass}`}>
-          {icon}
+        <div className="block">
+          <div className="block-hdr">
+            <div><h3>Urgent actions</h3><div className="sub">Needs you today</div></div>
+          </div>
+          <div style={{ padding: 0 }}>
+            <div className="feed-item" style={{ background: "#FFF5EE", borderLeft: "3px solid var(--coral)", paddingLeft: 15 }}>
+              <div className="feed-dot coral">£</div>
+              <div className="feed-body">
+                <div className="ln"><b>Approve £485.00 quote</b> — EICR at 14 Exmouth Market</div>
+                <div className="meta"><span>Volt Compliance Ltd</span>·<span>Expires in 18h</span></div>
+              </div>
+            </div>
+            <div className="feed-item">
+              <div className="feed-dot amber">!</div>
+              <div className="feed-body">
+                <div className="ln"><b>JOB-2471 overdue</b> — Communal lighting, Queen&apos;s Gate</div>
+                <div className="meta"><span>H&amp;S flag</span>·<span>Triaged 2 days ago</span></div>
+              </div>
+            </div>
+            <div className="feed-item">
+              <div className="feed-dot amber">◆</div>
+              <div className="feed-body">
+                <div className="ln"><b>EICR expires in 21 days</b> — 14 Exmouth Market</div>
+                <div className="meta"><span>Compliance</span>·<span>Book a certificate</span></div>
+              </div>
+            </div>
+            <div className="feed-item">
+              <div className="feed-dot">£</div>
+              <div className="feed-body">
+                <div className="ln"><b>Invoice FX-INV-4378 overdue</b> — £540.00, Flat 4 Marylebone Lane</div>
+                <div className="meta"><span>Finance</span>·<span>Due 28 Mar</span></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <p className="text-2xl font-black text-text-primary tabular-nums">{value}</p>
-      {sublabel && <p className="text-xs text-text-tertiary mt-1">{sublabel}</p>}
-    </Link>
+
+      {/* Activity + Spend */}
+      <div className="split-2-1 mt-20">
+        <div className="block">
+          <div className="block-hdr">
+            <div><h3>Activity</h3><div className="sub">Live updates across your portfolio</div></div>
+            <div className="actions">
+              <span className="filter-chip active">All <Icon name="down" size={10} /></span>
+              <button className="btn btn-ghost btn-sm">View feed</button>
+            </div>
+          </div>
+          <div className="feed">
+            {FEED.map((f, i) => (
+              <div key={i} className="feed-item">
+                <div className={`feed-dot ${f.dot}`}>{f.ic}</div>
+                <div className="feed-body">
+                  <div className="ln">{f.body}</div>
+                  <div className="meta"><span>{f.t}</span></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="block">
+            <div className="block-hdr"><div><h3>Spend by category</h3><div className="sub">Last 30 days</div></div></div>
+            <div className="block-body">
+              <div className="hbar">
+                {SPEND.map((r, i) => (
+                  <div key={i} className="hbar-row">
+                    <div className="n">{r.n}</div>
+                    <div className="t"><div className={`f ${i === 0 ? "coral" : ""}`} style={{ width: `${r.pct}%` }} /></div>
+                    <div className="v">{r.v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="block">
+            <div className="block-hdr"><div><h3>Top spending sites</h3><div className="sub">This month</div></div></div>
+            <div>
+              {TOP_SITES.map((r, i) => (
+                <div key={i} className="site-row">
+                  <div>
+                    <div className="name">{r.n}</div>
+                    <div className="addr">{r.s}</div>
+                  </div>
+                  <div className={`rag rag-${r.rag}`} />
+                  <div className="metric">{r.v}</div>
+                  <div style={{ color: "var(--slate-30)" }}><Icon name="arrow" size={12} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Charts row */}
+      <div className="grid-2 mt-20">
+        <div className="block">
+          <div className="block-hdr">
+            <div><h3>Jobs this month</h3><div className="sub">Completed vs emergency</div></div>
+            <div className="actions"><span className="filter-chip">30 days <Icon name="down" size={10} /></span></div>
+          </div>
+          <div className="block-body" style={{ paddingTop: 24 }}>
+            <div className="chart-bars">
+              {CHART.map((m, i) => (
+                <div key={i} className="b" style={{ height: `${m.c * 3.5}px`, background: i === 11 ? "var(--coral)" : "var(--navy)" }}>
+                  {i === 11 && <span className="v">{m.c}</span>}
+                </div>
+              ))}
+            </div>
+            <div className="chart-labels">
+              {["M", "T", "W", "T", "F", "S", "S", "M", "T", "W", "T", "F"].map((d, i) => <span key={i}>{d}</span>)}
+            </div>
+          </div>
+        </div>
+
+        <div className="block">
+          <div className="block-hdr"><div><h3>SLA performance</h3><div className="sub">Response + completion, last 30 days</div></div></div>
+          <div className="block-body">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--slate-50)", marginBottom: 10 }}>RESPONSE TIME</div>
+                <div style={{ fontSize: 36, fontWeight: 500, letterSpacing: "-0.02em" }}>94<span style={{ fontSize: 18, color: "var(--slate-50)" }}>%</span></div>
+                <div style={{ fontSize: 12, color: "var(--green)", marginTop: 4 }}>↑ 6% vs last month</div>
+                <div style={{ height: 6, background: "var(--slate-10)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
+                  <div style={{ width: "94%", height: "100%", background: "var(--green)" }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--slate-50)", marginTop: 6, fontFamily: "var(--mono)" }}>SLA: 98% · Target: 90%</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--slate-50)", marginBottom: 10 }}>COMPLETION TIME</div>
+                <div style={{ fontSize: 36, fontWeight: 500, letterSpacing: "-0.02em" }}>88<span style={{ fontSize: 18, color: "var(--slate-50)" }}>%</span></div>
+                <div style={{ fontSize: 12, color: "var(--amber)", marginTop: 4 }}>↓ 2% vs last month</div>
+                <div style={{ height: 6, background: "var(--slate-10)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
+                  <div style={{ width: "88%", height: "100%", background: "var(--amber)" }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--slate-50)", marginTop: 6, fontFamily: "var(--mono)" }}>SLA: 85% · Target: 85%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
