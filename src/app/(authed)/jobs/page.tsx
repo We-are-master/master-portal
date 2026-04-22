@@ -1,148 +1,107 @@
-import Link from "next/link";
-import { Briefcase, ChevronRight, Calendar, MapPin, User } from "lucide-react";
-import { JobOverdueBadge } from "@/components/shared/job-overdue-badge";
-import { requirePortalUserOrRedirect } from "@/lib/portal-auth";
-import { fetchAccountJobs } from "@/lib/server-fetchers/portal-jobs";
-import { PortalPage, PortalStagger, PortalListItem } from "@/components/portal/portal-motion";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useState } from "react";
+import { Icon } from "@/components/portal/icons";
+import { JobDrawer } from "@/components/portal/job-drawer";
 
-const STATUS_LABEL: Record<string, string> = {
-  unassigned:         "Pending schedule",
-  auto_assigning:     "Pending schedule",
-  scheduled:          "Scheduled",
-  late:               "Scheduled",
-  in_progress_phase1: "In progress",
-  in_progress_phase2: "In progress",
-  in_progress_phase3: "In progress",
-  in_progress:        "In progress",
-  final_check:        "Final check",
-  awaiting_payment:   "Awaiting payment",
-  completed:          "Completed",
-  cancelled:          "Cancelled",
-  on_hold:            "On hold",
-  need_attention:     "Needs attention",
+const STATUSES: Record<string, { lbl: string; pill: string }> = {
+  triage: { lbl: "Triage", pill: "slate" },
+  quoting: { lbl: "Quote in Progress", pill: "blue" },
+  awaiting: { lbl: "Awaiting Approval", pill: "warn" },
+  approved: { lbl: "Approved", pill: "navy" },
+  scheduled: { lbl: "Scheduled", pill: "navy" },
+  onsite: { lbl: "On Site", pill: "coral" },
+  completed: { lbl: "Completed", pill: "ok" },
+  invoiced: { lbl: "Invoiced", pill: "slate" },
 };
 
-const STATUS_STYLE: Record<string, { chip: string; dot: string }> = {
-  unassigned:         { chip: "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300", dot: "bg-amber-500" },
-  auto_assigning:     { chip: "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300", dot: "bg-amber-500" },
-  scheduled:          { chip: "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300",          dot: "bg-sky-500" },
-  late:               { chip: "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300",          dot: "bg-sky-500" },
-  in_progress_phase1: { chip: "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300", dot: "bg-orange-500" },
-  in_progress_phase2: { chip: "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300", dot: "bg-orange-500" },
-  in_progress_phase3: { chip: "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300", dot: "bg-orange-500" },
-  in_progress:        { chip: "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300", dot: "bg-orange-500" },
-  final_check:        { chip: "bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-300", dot: "bg-violet-500" },
-  awaiting_payment:   { chip: "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300",         dot: "bg-rose-500" },
-  completed:          { chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300", dot: "bg-emerald-500" },
-  cancelled:          { chip: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400",      dot: "bg-stone-400" },
-  on_hold:            { chip: "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",    dot: "bg-amber-500" },
-  need_attention:     { chip: "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300",         dot: "bg-rose-500" },
-};
+const JOBS = [
+  { id: "JOB-2481", title: "Boiler pressure fault — no hot water", siteName: "Flat 4, 52 Marylebone Lane", postcode: "W1U 2NH", category: "Heating & Gas", priority: 1, status: "onsite", operatorCo: "Finch Heating Co.", operator: "Marcus R.", scheduled: "Today · 14:30", approved: "£340.00", slaPct: 68 },
+  { id: "JOB-2479", title: "EICR — 5-year electrical inspection", siteName: "Office, 14 Exmouth Market", postcode: "EC1R 4QE", category: "Compliance", priority: 3, status: "awaiting", operatorCo: "Volt Compliance Ltd", operator: "—", scheduled: "24 Apr · 09:00", approved: "—", slaPct: 42 },
+  { id: "JOB-2476", title: "Replace damaged double-glazed unit", siteName: "9 Pelham Place", postcode: "SW7 2NH", category: "Handyman", priority: 2, status: "scheduled", operatorCo: "Meridian Glazing", operator: "Liam O'Connor", scheduled: "25 Apr · 10:00", approved: "£620.00", slaPct: 86 },
+  { id: "JOB-2474", title: "Blocked kitchen drain", siteName: "28A Cromwell Road", postcode: "SW7 2HR", category: "Plumbing", priority: 2, status: "completed", operatorCo: "Core Drainage", operator: "Sasha Patel", scheduled: "21 Apr · 15:00", approved: "£180.00", slaPct: 100 },
+  { id: "JOB-2471", title: "Communal lighting — stairwell fault", siteName: "Communal, Queen's Gate", postcode: "SW7 5HW", category: "Electrical", priority: 2, status: "quoting", operatorCo: "Arc Electrical", operator: "—", scheduled: "—", approved: "—", slaPct: 24 },
+  { id: "JOB-2468", title: "Post-tenancy deep clean", siteName: "18 Crawford Street", postcode: "W1H 1BT", category: "Cleaning", priority: 3, status: "invoiced", operatorCo: "Clean & Clear Ltd", operator: "—", scheduled: "17 Apr", approved: "£280.00", slaPct: 100 },
+  { id: "JOB-2465", title: "Replace WC cistern + internals", siteName: "112 George Street", postcode: "W1H 5RH", category: "Plumbing", priority: 3, status: "approved", operatorCo: "Finch Heating Co.", operator: "—", scheduled: "Pending", approved: "£210.00", slaPct: 50 },
+  { id: "JOB-2462", title: "Front door lock seized", siteName: "42 Upper Street", postcode: "N1 0PN", category: "Locks & Access", priority: 1, status: "completed", operatorCo: "CityKey Locksmiths", operator: "—", scheduled: "20 Apr", approved: "£165.00", slaPct: 100 },
+  { id: "JOB-2459", title: "Washing machine intermittent fault", siteName: "52 Marylebone Lane", postcode: "W1U 2NH", category: "Appliances", priority: 3, status: "triage", operatorCo: "—", operator: "—", scheduled: "—", approved: "—", slaPct: 12 },
+];
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-export default async function PortalJobsPage() {
-  const auth = await requirePortalUserOrRedirect();
-  const jobs = await fetchAccountJobs(auth.accountId);
-  const live = jobs.filter((j) => !["completed", "cancelled"].includes(j.status)).length;
+export default function JobsPage() {
+  const [filter, setFilter] = useState("all");
+  const [openJobId, setOpenJobId] = useState<string | null>(null);
+  const filtered = filter === "all" ? JOBS : JOBS.filter((j) => j.status === filter);
 
   return (
-    <PortalPage className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-end justify-between gap-4 flex-wrap">
+    <div className="page">
+      <div className="page-hdr">
         <div>
-          <h1 className="text-3xl font-black text-text-primary tracking-tight">Jobs</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Track work happening across your account in real time.
-          </p>
+          <div className="kicker">Operations</div>
+          <h1>Jobs</h1>
+          <p className="sub">Every live and historical job across your portfolio — with real-time status, SLA tracking, and full audit trail.</p>
         </div>
-        <div className="flex items-center gap-4 text-xs">
-          <Stat value={jobs.length} label="Total" />
-          <Stat value={live} label="Active" accent />
+        <div className="actions">
+          <button className="btn btn-ghost btn-sm"><Icon name="download" size={13} /> Export</button>
+          <button className="btn btn-primary"><Icon name="plus" size={13} /> New job</button>
         </div>
       </div>
 
-      {jobs.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <PortalStagger className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {jobs.map((j) => {
-            const scheduled = j.scheduled_start_at || j.scheduled_date;
-            const style = STATUS_STYLE[j.status] ?? { chip: "bg-surface-tertiary text-text-secondary", dot: "bg-stone-400" };
-            return (
-              <PortalListItem key={j.id}>
-                <Link
-                  href={`/jobs/${j.id}`}
-                  className="group block rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-border-light"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="text-[11px] font-mono text-text-tertiary tracking-wider">{j.reference}</span>
-                    <ChevronRight className="w-4 h-4 text-text-tertiary transition-transform group-hover:translate-x-0.5" />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
-                    <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full ${style.chip}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-                      {STATUS_LABEL[j.status] ?? j.status.replace(/_/g, " ")}
-                    </span>
-                    <JobOverdueBadge job={j} />
-                  </div>
-                  <h3 className="text-base font-bold text-text-primary line-clamp-2 mb-3">{j.title}</h3>
-                  <div className="space-y-1.5 text-xs">
-                    <Row icon={<Calendar className="w-3 h-3" />} text={fmtDate(scheduled)} />
-                    {j.property_address && <Row icon={<MapPin className="w-3 h-3" />} text={j.property_address} truncate />}
-                    <Row icon={<User className="w-3 h-3" />} text={j.partner_name || "Master team"} />
-                  </div>
-                </Link>
-              </PortalListItem>
-            );
-          })}
-        </PortalStagger>
-      )}
-    </PortalPage>
-  );
-}
-
-function Stat({ value, label, accent }: { value: number; label: string; accent?: boolean }) {
-  return (
-    <div className="text-right">
-      <p className={`text-2xl font-black tabular-nums leading-none ${accent ? "text-primary" : "text-text-primary"}`}>
-        {value}
-      </p>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mt-1">{label}</p>
-    </div>
-  );
-}
-
-function Row({ icon, text, truncate }: { icon: React.ReactNode; text: string; truncate?: boolean }) {
-  return (
-    <div className="flex items-center gap-1.5 text-text-secondary">
-      <span className="text-text-tertiary shrink-0">{icon}</span>
-      <span className={truncate ? "truncate" : ""}>{text}</span>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-2xl border border-border bg-card text-center py-20 px-6">
-      <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center mb-4">
-        <Briefcase className="w-7 h-7 text-primary" />
+      <div className="kpi-grid">
+        <div className="kpi"><span className="label">In Progress</span><div className="value">3</div><div className="trend flat">Live now</div></div>
+        <div className="kpi"><span className="label">Scheduled</span><div className="value">2</div><div className="trend flat">Next 7 days</div></div>
+        <div className="kpi"><span className="label">Awaiting Action</span><div className="value coral">4</div><div className="trend flat">Needs you</div></div>
+        <div className="kpi"><span className="label">Completed (30d)</span><div className="value">41</div><div className="trend up">↑ 12%</div></div>
       </div>
-      <h2 className="text-lg font-bold text-text-primary mb-1">No jobs yet</h2>
-      <p className="text-sm text-text-secondary max-w-sm mx-auto">
-        Once a quote is accepted, the resulting job shows up here with live progress, photos and payment tracking.
-      </p>
-      <Link
-        href="/quotes"
-        className="inline-flex items-center gap-1.5 mt-4 text-sm font-semibold text-primary hover:underline"
-      >
-        Review open quotes
-        <ChevronRight className="w-3.5 h-3.5" />
-      </Link>
+
+      <div className="block mt-20">
+        <div className="tbl-toolbar">
+          <div className="tbl-search"><Icon name="search" size={13} /><input placeholder="Search job ID, title, site…" /></div>
+          {[
+            { id: "all", lbl: "All", c: JOBS.length },
+            { id: "onsite", lbl: "Live", c: 3 },
+            { id: "awaiting", lbl: "Awaiting", c: 1 },
+            { id: "scheduled", lbl: "Scheduled", c: 2 },
+            { id: "completed", lbl: "Completed", c: 2 },
+          ].map((f) => (
+            <span key={f.id} className={`filter-chip${filter === f.id ? " active" : ""}`} onClick={() => setFilter(f.id)}>
+              {f.lbl} <span className="v">{f.c}</span>
+            </span>
+          ))}
+          <div style={{ marginLeft: "auto", fontSize: 12, color: "var(--slate-50)" }}>{filtered.length} jobs</div>
+        </div>
+        <table className="tbl">
+          <thead><tr><th>Job</th><th>Site</th><th>Category</th><th>Priority</th><th>Status</th><th>Operator</th><th>Scheduled</th><th>Value</th><th>SLA</th><th></th></tr></thead>
+          <tbody>
+            {filtered.map((j) => {
+              const s = STATUSES[j.status] ?? { lbl: j.status, pill: "slate" };
+              return (
+                <tr key={j.id} onClick={() => setOpenJobId(j.id)} style={{ cursor: "pointer" }}>
+                  <td><div className="bold">{j.title}</div><span className="sub mono">{j.id}</span></td>
+                  <td><div>{j.siteName}</div><span className="sub mono">{j.postcode}</span></td>
+                  <td>{j.category}</td>
+                  <td><span className={`priority p${j.priority}`}><span className="bar" />P{j.priority}</span></td>
+                  <td><span className={`pill ${s.pill}`}><span className="d" />{s.lbl}</span></td>
+                  <td style={{ fontSize: 12 }}>{j.operatorCo}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{j.scheduled}</td>
+                  <td className="bold">{j.approved}</td>
+                  <td>
+                    <div className="sla">
+                      <svg className="sla-ring" viewBox="0 0 36 36">
+                        <circle className="bg" cx="18" cy="18" r="15" />
+                        <circle className="fg" cx="18" cy="18" r="15" strokeDasharray={`${j.slaPct * 0.942} 100`} />
+                      </svg>
+                      <span className="txt" style={{ color: j.slaPct < 30 ? "var(--red)" : j.slaPct < 70 ? "var(--amber)" : "var(--green)" }}>{j.slaPct}%</span>
+                    </div>
+                  </td>
+                  <td style={{ color: "var(--slate-30)" }}><Icon name="arrow" size={12} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {openJobId && <JobDrawer jobId={openJobId} close={() => setOpenJobId(null)} />}
     </div>
   );
 }

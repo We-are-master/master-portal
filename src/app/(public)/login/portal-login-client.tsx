@@ -7,56 +7,35 @@ export function PortalLoginClient() {
   const params = useSearchParams();
   const initialError = params.get("error");
 
-  const [email, setEmail]     = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sent, setSent]       = useState(false);
-  const [error, setError]     = useState<string | null>(null);
-
-  // OTP code state — alternative to clicking the magic link.
-  // Supabase sends both a link and a 6-digit code in the same email.
-  const [code, setCode]         = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
 
-  // Show a helpful message if the user landed here from an expired link.
   useEffect(() => {
-    if (initialError === "link_expired") {
-      setError("That sign-in link has expired. Enter your email below to get a new one.");
-    } else if (initialError === "invalid_link") {
-      setError("That sign-in link is invalid. Enter your email below to get a new one.");
-    } else if (initialError === "not_portal_user") {
-      setError(
-        "This email is not registered as a portal user. If you're a Master team member, sign in at /login instead.",
-      );
-    }
+    if (initialError === "link_expired") setError("That sign-in link has expired. Enter your email below to get a new one.");
+    else if (initialError === "invalid_link") setError("That sign-in link is invalid. Enter your email below to get a new one.");
+    else if (initialError === "not_portal_user") setError("This email is not registered as a portal user.");
   }, [initialError]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim() || !email.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
+    if (!email.trim() || !email.includes("@")) { setError("Please enter a valid email address."); return; }
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/auth/magic-link", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-      // Always show the same success message regardless of whether the email
-      // is registered — never confirm/deny existence of accounts.
-      if (res.ok || res.status === 429) {
+      if (res.status === 429) {
         const json = await res.json().catch(() => ({}));
-        if (res.status === 429) {
-          setError(json?.error ?? "Too many sign-in attempts. Please try again in a few minutes.");
-        } else {
-          setSent(true);
-        }
+        setError(json?.error ?? "Too many sign-in attempts. Please try again in a few minutes.");
       } else {
-        // For unexpected server errors, still show the generic success
-        // message — don't leak server state.
         setSent(true);
       }
     } catch {
@@ -70,178 +49,177 @@ export function PortalLoginClient() {
     e.preventDefault();
     setOtpError(null);
     const cleaned = code.replace(/\s+/g, "");
-    if (!/^\d{6}$/.test(cleaned)) {
-      setOtpError("Enter the 6-digit code from your email.");
-      return;
-    }
+    if (!/^\d{6}$/.test(cleaned)) { setOtpError("Enter the 6-digit code from your email."); return; }
     setVerifying(true);
     try {
       const res = await fetch("/api/auth/verify-otp", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          email: email.trim().toLowerCase(),
-          token: cleaned,
-        }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), token: cleaned }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setOtpError(typeof json.error === "string" ? json.error : "That code didn't work. Please try again.");
-        setVerifying(false);
-        return;
-      }
-      // Success — the auth cookie is set on the response. Use a full
-      // browser navigation (NOT router.push) so the next request goes
-      // through the middleware with the freshly-set cookie. router.push
-      // would race the cookie propagation and cause an immediate redirect
-      // back to /portal/login.
+      if (!res.ok) { setOtpError(typeof json.error === "string" ? json.error : "That code didn't work."); setVerifying(false); return; }
       window.location.assign("/");
     } catch (err) {
-      console.error("[portal/login] verify error:", err);
+      console.error("[login] verify error:", err);
       setOtpError("We could not verify your code. Please try again.");
       setVerifying(false);
     }
   }
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center px-4 py-12"
-      style={{ background: "linear-gradient(160deg,#020034 0%,#0D006E 55%,#E94A02 100%)" }}
-    >
-      <div className="w-full max-w-md">
-        {/* Logo + heading */}
-        <div className="text-center mb-8">
-          <div
-            className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden"
-            style={{
-              background: "rgba(255,255,255,0.1)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              boxShadow: "0 8px 32px rgba(233,74,2,0.35)",
-            }}
-          >
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+      background: "var(--navy)", position: "relative", overflow: "hidden",
+    }}>
+      {/* Background pattern */}
+      <div style={{ position: "absolute", inset: 0, opacity: 0.04 }}>
+        <svg width="100%" height="100%"><defs><pattern id="g" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0L0 0 0 48" fill="none" stroke="#fff" strokeWidth="0.5" /></pattern></defs><rect width="100%" height="100%" fill="url(#g)" /></svg>
+      </div>
+      {/* Gradient accent */}
+      <div style={{ position: "absolute", bottom: -120, right: -120, width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(234,76,11,0.25) 0%, transparent 70%)" }} />
+      <div style={{ position: "absolute", top: -80, left: -80, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%)" }} />
+
+      <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 420, padding: "0 20px" }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 12, margin: "0 auto 16px",
+            background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="https://wearemaster.com/favicon.png"
-              alt="Master"
-              className="w-12 h-12 object-contain"
-            />
+            <img src="https://wearemaster.com/favicon.png" alt="Fixfy" style={{ width: 28, height: 28, objectFit: "contain" }} />
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Account Portal</h1>
-          <p className="text-white/55 text-sm mt-1">Sign in to manage your account with Master</p>
+          <div style={{ color: "#fff", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>fixfy</div>
+          <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, marginTop: 4, fontFamily: "var(--mono)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Maintenance OS</div>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-7">
+        <div style={{
+          background: "var(--surface)", borderRadius: 8, border: "1px solid var(--line)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+        }}>
           {sent ? (
-            <div>
-              <div className="text-center mb-5">
-                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
+            <div style={{ padding: "28px 28px 24px" }}>
+              {/* Check your email */}
+              <div style={{ textAlign: "center", marginBottom: 20 }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: "50%", background: "#E7F5EC",
+                  display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px",
+                }}>
+                  <svg viewBox="0 0 16 16" width={20} height={20} fill="none" stroke="var(--green)" strokeWidth={2}><path d="M3 8l3 3 7-7" /></svg>
                 </div>
-                <h2 className="text-xl font-black text-slate-800 mb-2">Check your email</h2>
-                <p className="text-slate-500 text-sm leading-relaxed">
-                  If <span className="font-semibold text-slate-700">{email}</span> is registered with us,
-                  you&rsquo;ll receive a sign-in link <strong>and a 6-digit code</strong> shortly.
+                <h2 style={{ fontSize: 18, fontWeight: 500, color: "var(--ink)", marginBottom: 6 }}>Check your email</h2>
+                <p style={{ fontSize: 13, color: "var(--slate-50)", lineHeight: 1.5 }}>
+                  If <b style={{ color: "var(--ink)" }}>{email}</b> is registered, you&rsquo;ll receive a sign-in link and a 6-digit code.
                 </p>
               </div>
 
-              {/* OTP code input — alternative to clicking the link */}
-              <form onSubmit={handleVerifyOtp} className="border-t border-slate-100 pt-5">
-                <p className="text-xs font-semibold text-slate-500 mb-3 text-center uppercase tracking-wide">
-                  Or enter the 6-digit code
-                </p>
+              {/* OTP */}
+              <form onSubmit={handleVerifyOtp}>
+                <div style={{
+                  borderTop: "1px solid var(--line)", paddingTop: 16, marginBottom: 12,
+                  fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase",
+                  color: "var(--slate-50)", textAlign: "center",
+                }}>OR ENTER THE 6-DIGIT CODE</div>
 
                 {otpError && (
-                  <div className="mb-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-2.5 text-sm">
+                  <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "var(--red)", borderRadius: 5, padding: "8px 12px", fontSize: 12 }}>
                     {otpError}
                   </div>
                 )}
 
-                <input
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-2xl font-bold text-center tracking-[0.5em] tabular-nums focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition mb-4"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  placeholder="000000"
-                  maxLength={6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
-                  autoComplete="one-time-code"
-                  disabled={verifying}
-                  autoFocus
-                />
+                <div className="field" style={{ marginBottom: 12 }}>
+                  <input
+                    style={{
+                      textAlign: "center", fontSize: 22, fontWeight: 600, letterSpacing: "0.5em",
+                      fontFamily: "var(--mono)", padding: "12px 11px",
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    placeholder="000000"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                    autoComplete="one-time-code"
+                    disabled={verifying}
+                    autoFocus
+                  />
+                </div>
 
                 <button
                   type="submit"
                   disabled={verifying || code.length !== 6}
-                  className="w-full py-3 rounded-xl font-bold text-sm text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  style={{ background: "linear-gradient(90deg,#FF6B2B,#E94A02)" }}
+                  className="btn btn-primary"
+                  style={{ width: "100%", justifyContent: "center", padding: "10px 14px", opacity: verifying || code.length !== 6 ? 0.5 : 1 }}
                 >
-                  {verifying ? "Verifying..." : "Sign in with code"}
+                  {verifying ? "Verifying…" : "Sign in with code"}
                 </button>
               </form>
 
-              <p className="text-xs text-slate-400 mt-5 text-center">
-                Didn&rsquo;t receive it? Check your spam folder or{" "}
-                <a href="mailto:hello@wearemaster.com" className="text-orange-600 font-medium">
-                  contact us
-                </a>
-              </p>
-              <button
-                type="button"
-                onClick={() => { setSent(false); setCode(""); setOtpError(null); }}
-                className="mt-3 w-full text-sm text-slate-500 hover:text-slate-700 underline text-center"
-              >
-                Try a different email
-              </button>
+              <div style={{ marginTop: 16, textAlign: "center" }}>
+                <p style={{ fontSize: 11, color: "var(--slate-50)" }}>
+                  Didn&rsquo;t receive it? Check spam or{" "}
+                  <a href="mailto:hello@wearemaster.com" style={{ color: "var(--coral-600)", fontWeight: 500 }}>contact us</a>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setSent(false); setCode(""); setOtpError(null); }}
+                  style={{ marginTop: 8, fontSize: 12, color: "var(--slate-70)", textDecoration: "underline", cursor: "pointer", background: "none", border: "none", fontFamily: "inherit" }}
+                >
+                  Try a different email
+                </button>
+              </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit}>
-              <h2 className="text-lg font-bold text-slate-800 mb-1">Sign in</h2>
-              <p className="text-sm text-slate-500 mb-5">
+            <form onSubmit={handleSubmit} style={{ padding: "28px 28px 24px" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 500, color: "var(--ink)", marginBottom: 4 }}>Sign in to your portal</h2>
+              <p style={{ fontSize: 13, color: "var(--slate-50)", marginBottom: 20 }}>
                 Enter the email address linked to your account. We&rsquo;ll send you a sign-in link.
               </p>
 
               {error && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+                <div style={{ marginBottom: 14, background: "#FEE2E2", border: "1px solid #FECACA", color: "var(--red)", borderRadius: 5, padding: "10px 12px", fontSize: 12 }}>
                   {error}
                 </div>
               )}
 
-              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
-                Email address
-              </label>
-              <input
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition mb-5"
-                type="text"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoCapitalize="none"
-                autoCorrect="off"
-                autoComplete="email"
-                disabled={loading}
-              />
+              <div className="field">
+                <label>Email address</label>
+                <input
+                  type="text"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="email"
+                  disabled={loading}
+                />
+              </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3.5 rounded-xl font-bold text-sm text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-                style={{ background: "linear-gradient(90deg,#FF6B2B,#E94A02)" }}
+                className="btn btn-primary"
+                style={{ width: "100%", justifyContent: "center", padding: "10px 14px", opacity: loading ? 0.6 : 1 }}
               >
-                {loading ? "Sending link..." : "Send sign-in link"}
+                {loading ? "Sending link…" : "Send sign-in link"}
               </button>
 
-              <p className="text-xs text-slate-400 text-center mt-5">
+              <p style={{ fontSize: 11, color: "var(--slate-50)", textAlign: "center", marginTop: 16 }}>
                 Don&rsquo;t have an account?{" "}
-                <a href="mailto:hello@wearemaster.com" className="text-orange-600 font-medium">
-                  Contact us
-                </a>
+                <a href="mailto:hello@wearemaster.com" style={{ color: "var(--coral-600)", fontWeight: 500 }}>Contact us</a>
               </p>
             </form>
           )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ textAlign: "center", marginTop: 24, fontSize: 11, color: "rgba(255,255,255,0.3)", fontFamily: "var(--mono)" }}>
+          Fixfy · Maintenance OS for UK businesses
         </div>
       </div>
     </div>
