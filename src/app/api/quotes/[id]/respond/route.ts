@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePortalUser } from "@/lib/portal-auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { fetchPortalQuoteDetail } from "@/lib/server-fetchers/portal-quotes";
 import { createQuoteResponseToken } from "@/lib/quote-response-token";
 
@@ -27,6 +28,18 @@ export async function POST(
 ) {
   const auth = await requirePortalUser();
   if (auth instanceof NextResponse) return auth;
+
+  // Financial action — tight limit. 5 responses per hour per user+IP is
+  // plenty for legitimate use (a user rarely approves more than a few
+  // quotes in a single session) and caps programmatic abuse.
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`portal-quote-respond:${auth.user.id}:${ip}`, 5, 60 * 60 * 1000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many quote responses. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   const { id: quoteId } = await ctx.params;
   if (!quoteId) {
