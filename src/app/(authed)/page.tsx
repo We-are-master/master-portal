@@ -1,274 +1,340 @@
 "use client";
 
-import { Icon } from "@/components/portal/icons";
+import Link from "next/link";
+import { getAccountMeta, t } from "@/lib/account-type";
+import { JOBS_ALL, PROPERTIES } from "@/lib/mocks/portal-v2";
 
-/* ── Mock data (will be replaced with real Supabase fetchers) ─── */
-const KPIS = [
-  { label: "Open Requests", value: "14", trend: "up", trendTxt: "+3 this week" },
-  { label: "Jobs in Progress", value: "9", trend: "flat", trendTxt: "Stable" },
-  { label: "Quotes Awaiting", value: "2", trend: "up", trendTxt: "Action needed", coral: true },
-  { label: "Overdue Jobs", value: "1", trend: "down", trendTxt: "↓ from 3" },
-  { label: "Spend This Month", value: "£28,420", trend: "up", trendTxt: "↑ 8% vs Mar" },
-  { label: "Emergency Jobs", value: "3", trend: "flat", trendTxt: "This month" },
-  { label: "Completed", value: "41", trend: "up", trendTxt: "↑ 12% MoM" },
-  { label: "Avg. Completion", value: "3.2d", trend: "up", trendTxt: "↑ faster" },
+const AM = {
+  real_estate: { name: "Rachel Okonkwo", title: "Account Manager", avatar: "👩‍💼" },
+  franchise: { name: "James Whitmore", title: "Account Manager", avatar: "👨‍💼" },
+  service: { name: "Marcus Reid", title: "Account Manager", avatar: "👨‍💼" },
+  enterprise: { name: "Sarah Chen", title: "Account Manager", avatar: "👩‍💼" },
+} as const;
+
+const CERT_ROLLUP = [
+  { l: "Gas Safe", tot: 24, ok: 22, w: 2, r: 0 },
+  { l: "EICR", tot: 18, ok: 15, w: 2, r: 1 },
+  { l: "PAT", tot: 12, ok: 11, w: 1, r: 0 },
+  { l: "Fire Safety", tot: 8, ok: 8, w: 0, r: 0 },
 ];
 
-const FEED = [
-  { t: "3 min ago", dot: "coral", ic: "●", body: "Engineer Marcus R. arrived on site at Flat 4, 52 Marylebone Lane for JOB-2481" },
-  { t: "28 min ago", dot: "amber", ic: "£", body: "Quote submitted: £485.00 for EICR inspection at 14 Exmouth Market — awaiting your approval" },
-  { t: "1h 12m ago", dot: "green", ic: "✓", body: "Completion report uploaded for JOB-2474 · Blocked kitchen drain (28A Cromwell Road)" },
-  { t: "2h ago", dot: "blue", ic: "@", body: "Sasha Patel sent an update on JOB-2459: \"Booked for Friday morning, will call ahead\"" },
-  { t: "Today · 09:02", dot: "coral", ic: "£", body: "Invoice FX-INV-4421 issued — £280.00 for Post-tenancy deep clean (18 Crawford Street)" },
-  { t: "Yesterday · 17:20", dot: "green", ic: "✓", body: "Job JOB-2474 completed · 2h 06m on site · photos attached" },
-  { t: "Yesterday · 16:40", dot: "green", ic: "✓", body: "Quote approved by Priya Nair: £620.00 for glazing replacement at Pelham Place" },
+const SPEND_BY_SERVICE = [
+  { n: "Plumbing", pct: 72, v: "£6,840" },
+  { n: "Electrical", pct: 58, v: "£5,520" },
+  { n: "Cleaning", pct: 42, v: "£3,980" },
+  { n: "HVAC", pct: 34, v: "£3,240" },
+  { n: "Compliance", pct: 24, v: "£2,280" },
 ];
 
-const SPEND = [
-  { n: "Heating & Gas", pct: 82, v: "£6,840" },
-  { n: "Electrical", pct: 68, v: "£5,720" },
-  { n: "Plumbing", pct: 54, v: "£4,490" },
-  { n: "Compliance", pct: 48, v: "£3,980" },
-  { n: "Handyman", pct: 38, v: "£3,180" },
-  { n: "Cleaning", pct: 22, v: "£1,840" },
-  { n: "Locks & Access", pct: 18, v: "£1,520" },
-];
+const KPI = {
+  openJobs: 14,
+  spent: 28420,
+  slaScore: 94,
+  sites: 42,
+};
 
-const TOP_SITES = [
-  { n: "Office, 14 Exmouth Market", s: "EC1R 4QE · Islington", v: "£8,420", rag: "r" },
-  { n: "Communal, Queen's Gate", s: "SW7 5HW · Kensington", v: "£5,240", rag: "a" },
-  { n: "Flat 4, 52 Marylebone Lane", s: "W1U 2NH · Marylebone", v: "£3,180", rag: "a" },
-  { n: "Shopfront, 42 Upper Street", s: "N1 0PN · Islington", v: "£2,440", rag: "g" },
-];
-
-const CHART = [
-  { c: 8 }, { c: 11 }, { c: 9 }, { c: 14 }, { c: 12 }, { c: 16 },
-  { c: 9 }, { c: 18 }, { c: 22 }, { c: 15 }, { c: 24 }, { c: 19 },
-];
-
-const MAP_PINS = [
-  { x: 18, y: 42, s: "g" }, { x: 22, y: 38, s: "a" }, { x: 28, y: 46, s: "g" }, { x: 32, y: 40, s: "g" },
-  { x: 34, y: 50, s: "r" }, { x: 38, y: 44, s: "g" }, { x: 42, y: 48, s: "g" }, { x: 46, y: 52, s: "g" },
-  { x: 50, y: 46, s: "a" }, { x: 54, y: 42, s: "g" }, { x: 58, y: 50, s: "g" }, { x: 62, y: 44, s: "g" },
-  { x: 66, y: 48, s: "g" }, { x: 70, y: 40, s: "a" }, { x: 74, y: 46, s: "g" },
-];
+function todayStr() {
+  return new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
 
 export default function DashboardPage() {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const meta = getAccountMeta();
+  const am = AM[meta.key];
+  const isRealEstate = meta.key === "real_estate";
+
+  const expiries = PROPERTIES.flatMap((p) => p.certs.map((c) => ({ ...c, prop: p.name })))
+    .filter((c) => c.daysLeft <= 120)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  const alerts = expiries.filter((c) => c.status !== "ok").length;
+
+  const activeJobs = JOBS_ALL.filter((j) => j.status !== "completed" && j.status !== "cancelled").slice(0, 4);
+  const upcoming = JOBS_ALL.filter((j) => j.status === "upcoming").slice(0, 3);
 
   return (
     <div className="page">
-      {/* Header */}
-      <div className="page-hdr">
+      <div className="ph">
         <div>
-          <div className="kicker">{dateStr}</div>
-          <h1>Good afternoon, Priya.</h1>
-          <p className="sub">
-            You have <b style={{ color: "var(--coral-600)" }}>2 quotes awaiting approval</b> and <b>1 overdue job</b>. Everything else is on track.
-          </p>
+          <div className="kk">{todayStr()}</div>
+          <h1>
+            Good morning. Welcome back.
+            {isRealEstate && <span className="badge-soon" style={{ marginLeft: 4 }}>{t("tenantApp")}</span>}
+          </h1>
+          <p className="sub">{KPI.openJobs} open jobs. Fixfy is handling everything. Sit back.</p>
         </div>
-        <div className="actions">
-          <button className="btn btn-ghost btn-sm"><Icon name="download" size={13} /> Export snapshot</button>
-          <button className="btn btn-primary"><Icon name="plus" size={13} /> New request</button>
+        <div className="acts">
+          <button className="btn btn-g btn-sm">Export report</button>
+          <Link href="/requests" className="btn btn-p" style={{ textDecoration: "none" }}>
+            + New request
+          </Link>
         </div>
       </div>
 
-      {/* KPI grid */}
-      <div className="kpi-grid">
-        {KPIS.map((k, i) => (
-          <div key={i} className="kpi">
-            <span className="label">{k.label}</span>
-            <div className={`value${k.coral ? " coral" : ""}`}>{k.value}</div>
-            <div className={`trend ${k.trend}`}>{k.trendTxt}</div>
-          </div>
-        ))}
+      <div className="kg">
+        <div className="kpi">
+          <div className="lbl">Open jobs</div>
+          <div className="val" style={{ color: "var(--co)" }}>{KPI.openJobs}</div>
+          <div className="tr flat">Fixfy managing</div>
+        </div>
+        <div className="kpi">
+          <div className="lbl">Spent MTD</div>
+          <div className="val" style={{ fontSize: 18 }}>£{KPI.spent.toLocaleString()}</div>
+          <div className="tr">↑ 8% vs last month</div>
+        </div>
+        <div className="kpi">
+          <div className="lbl">SLA compliance</div>
+          <div className="val" style={{ color: "var(--gr)" }}>{KPI.slaScore}%</div>
+          <div className="tr">All services</div>
+        </div>
+        <div className="kpi">
+          <div className="lbl">{t("sites")}</div>
+          <div className="val">{KPI.sites}</div>
+          <div className="tr flat">{meta.type}</div>
+        </div>
       </div>
 
-      {/* Map + Urgent actions */}
-      <div className="split-2-1 mt-20">
-        <div className="block">
-          <div className="block-hdr">
-            <div>
-              <h3>Portfolio map</h3>
-              <div className="sub">42 sites · 14 active · 1 overdue</div>
+      <div className="s21">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="blk">
+            <div className="bh">
+              <h3>Active jobs</h3>
+              <Link href="/jobs" className="btn btn-g btn-sm" style={{ textDecoration: "none" }}>View all</Link>
             </div>
-            <div className="actions">
-              <span className="filter-chip">All branches <Icon name="down" size={10} /></span>
-              <button className="btn btn-ghost btn-sm">View all</button>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Service</th>
+                  <th>Site</th>
+                  <th>SLA</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeJobs.map((j) => (
+                  <tr key={j.id}>
+                    <td>
+                      <div className="b">{j.title}</div>
+                      <div className="mu mono">{j.id}</div>
+                    </td>
+                    <td><span className="pill n">{j.svc}</span></td>
+                    <td style={{ fontSize: 12 }}>{j.site}</td>
+                    <td>
+                      <span
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 11,
+                          color: j.slaPct < 50 ? "var(--rd)" : j.slaPct < 75 ? "var(--am)" : "var(--gr)",
+                        }}
+                      >
+                        {j.sla}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`pill ${j.status === "in_progress" ? "c" : j.status === "awaiting_report" ? "w" : "b"}`}>
+                        <span className="d" />
+                        {j.status === "in_progress" ? "In progress" : j.status === "awaiting_report" ? "Awaiting report" : "Upcoming"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="blk">
+            <div className="bh">
+              <h3>Compliance overview</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {alerts > 0 && (
+                  <span className="pill w">
+                    <span className="d" />
+                    {alerts} alert{alerts > 1 ? "s" : ""}
+                  </span>
+                )}
+                <Link href="/sites" className="btn btn-g btn-sm" style={{ textDecoration: "none" }}>Manage</Link>
+              </div>
+            </div>
+            <div className="bb" style={{ padding: 0 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                <div style={{ padding: 14, borderRight: "1px solid var(--ln)" }}>
+                  <div className="kk" style={{ marginBottom: 8 }}>Certificates across portfolio</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 6 }}>
+                    {CERT_ROLLUP.map((c) => {
+                      const pct = Math.round((c.ok / c.tot) * 100);
+                      return (
+                        <div key={c.l} style={{ border: "1px solid var(--ln)", borderRadius: 5, padding: "8px 10px" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                            <span
+                              style={{
+                                fontFamily: "var(--mono)",
+                                fontSize: 9.5,
+                                letterSpacing: ".1em",
+                                textTransform: "uppercase",
+                                color: "var(--s50)",
+                              }}
+                            >
+                              {c.l}
+                            </span>
+                            <span
+                              style={{
+                                fontFamily: "var(--mono)",
+                                fontSize: 11,
+                                fontWeight: 500,
+                                color: pct === 100 ? "var(--gr)" : pct >= 85 ? "var(--am)" : "var(--rd)",
+                              }}
+                            >
+                              {pct}%
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                            {Array.from({ length: c.tot }).map((_, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  width: 4,
+                                  height: 10,
+                                  borderRadius: 1,
+                                  background:
+                                    i < c.ok ? "var(--gr)" : i < c.ok + c.w ? "var(--am)" : "var(--rd)",
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--s50)", marginTop: 4 }}>
+                            {c.ok}/{c.tot} compliant{c.w > 0 ? ` · ${c.w} expiring` : ""}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ padding: 14 }}>
+                  <div className="kk" style={{ marginBottom: 8 }}>Upcoming expiries (next 120 days)</div>
+                  {expiries.slice(0, 5).map((e, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "7px 0",
+                        borderBottom: i < 4 ? "1px solid var(--ln)" : "none",
+                        fontSize: 12,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: e.status === "ok" ? "var(--gr)" : e.status === "w" ? "var(--am)" : "var(--rd)",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {e.n}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: "var(--s50)",
+                            fontFamily: "var(--mono)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {e.prop}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div
+                          style={{
+                            fontFamily: "var(--mono)",
+                            fontSize: 11,
+                            fontWeight: 500,
+                            color:
+                              e.daysLeft < 30 ? "var(--rd)" : e.daysLeft < 60 ? "var(--am)" : "var(--s70)",
+                          }}
+                        >
+                          {e.daysLeft}d
+                        </div>
+                        <div style={{ fontSize: 9, color: "var(--s50)" }}>{e.exp}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-          <div style={{ padding: 14 }}>
-            <div className="map">
-              <svg className="map-svg" viewBox="0 0 800 280" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.7 }}>
-                <defs>
-                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-                  </pattern>
-                </defs>
-                <rect width="800" height="280" fill="url(#grid)" />
-                <path d="M0,170 Q120,130 200,155 T400,150 T600,165 T800,150" stroke="rgba(100,180,255,0.15)" strokeWidth="22" fill="none" />
-                <path d="M0,170 Q120,130 200,155 T400,150 T600,165 T800,150" stroke="rgba(100,180,255,0.3)" strokeWidth="1.5" fill="none" />
-                <circle cx="260" cy="110" r="55" fill="rgba(255,255,255,0.03)" />
-                <circle cx="420" cy="130" r="70" fill="rgba(255,255,255,0.03)" />
-                <circle cx="560" cy="100" r="50" fill="rgba(255,255,255,0.03)" />
-                <text x="260" y="78" fill="rgba(255,255,255,0.3)" fontSize="10" textAnchor="middle" fontFamily="var(--mono)">MARYLEBONE · 24</text>
-                <text x="420" y="90" fill="rgba(255,255,255,0.3)" fontSize="10" textAnchor="middle" fontFamily="var(--mono)">ISLINGTON · 9</text>
-                <text x="560" y="60" fill="rgba(255,255,255,0.3)" fontSize="10" textAnchor="middle" fontFamily="var(--mono)">KENSINGTON · 9</text>
-              </svg>
-              {MAP_PINS.map((pin, i) => (
-                <div key={i} className="map-pin" style={{ left: `${pin.x}%`, top: `${pin.y}%` }}>
-                  <div className={`p ${pin.s}`} />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="am-card">
+            <div className="am-ava">{am.avatar}</div>
+            <div style={{ flex: 1 }}>
+              <div className="am-name">{am.name}</div>
+              <div className="am-title">{am.title}</div>
+              <div className="am-btns">
+                <button className="am-btn">📞 Call</button>
+                <button className="am-btn">✉ Email</button>
+                <button className="am-btn">💬 WhatsApp</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="blk">
+            <div className="bh">
+              <h3>Spend by service</h3>
+              <span style={{ fontSize: 11, color: "var(--s50)" }}>Last 30d</span>
+            </div>
+            <div className="bb">
+              {SPEND_BY_SERVICE.map((r) => (
+                <div
+                  key={r.n}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "90px 1fr 70px",
+                    gap: 8,
+                    alignItems: "center",
+                    fontSize: 12,
+                    marginBottom: 8,
+                  }}
+                >
+                  <span className="bold">{r.n}</span>
+                  <div style={{ height: 5, background: "var(--s10)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${r.pct}%`, height: "100%", background: "var(--n)", borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, textAlign: "right", color: "var(--s70)" }}>
+                    {r.v}
+                  </span>
                 </div>
               ))}
-              <div className="map-legend">
-                <div className="lg"><div className="d" style={{ background: "var(--green)" }} /> On track · 37</div>
-                <div className="lg"><div className="d" style={{ background: "var(--amber)" }} /> Attention · 4</div>
-                <div className="lg"><div className="d" style={{ background: "var(--red)" }} /> Overdue · 1</div>
-              </div>
             </div>
           </div>
-        </div>
 
-        <div className="block">
-          <div className="block-hdr">
-            <div><h3>Urgent actions</h3><div className="sub">Needs you today</div></div>
-          </div>
-          <div style={{ padding: 0 }}>
-            <div className="feed-item" style={{ background: "#FFF5EE", borderLeft: "3px solid var(--coral)", paddingLeft: 15 }}>
-              <div className="feed-dot coral">£</div>
-              <div className="feed-body">
-                <div className="ln"><b>Approve £485.00 quote</b> — EICR at 14 Exmouth Market</div>
-                <div className="meta"><span>Volt Compliance Ltd</span>·<span>Expires in 18h</span></div>
-              </div>
-            </div>
-            <div className="feed-item">
-              <div className="feed-dot amber">!</div>
-              <div className="feed-body">
-                <div className="ln"><b>JOB-2471 overdue</b> — Communal lighting, Queen&apos;s Gate</div>
-                <div className="meta"><span>H&amp;S flag</span>·<span>Triaged 2 days ago</span></div>
-              </div>
-            </div>
-            <div className="feed-item">
-              <div className="feed-dot amber">◆</div>
-              <div className="feed-body">
-                <div className="ln"><b>EICR expires in 21 days</b> — 14 Exmouth Market</div>
-                <div className="meta"><span>Compliance</span>·<span>Book a certificate</span></div>
-              </div>
-            </div>
-            <div className="feed-item">
-              <div className="feed-dot">£</div>
-              <div className="feed-body">
-                <div className="ln"><b>Invoice FX-INV-4378 overdue</b> — £540.00, Flat 4 Marylebone Lane</div>
-                <div className="meta"><span>Finance</span>·<span>Due 28 Mar</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Activity + Spend */}
-      <div className="split-2-1 mt-20">
-        <div className="block">
-          <div className="block-hdr">
-            <div><h3>Activity</h3><div className="sub">Live updates across your portfolio</div></div>
-            <div className="actions">
-              <span className="filter-chip active">All <Icon name="down" size={10} /></span>
-              <button className="btn btn-ghost btn-sm">View feed</button>
-            </div>
-          </div>
-          <div className="feed">
-            {FEED.map((f, i) => (
-              <div key={i} className="feed-item">
-                <div className={`feed-dot ${f.dot}`}>{f.ic}</div>
-                <div className="feed-body">
-                  <div className="ln">{f.body}</div>
-                  <div className="meta"><span>{f.t}</span></div>
+          <div className="blk">
+            <div className="bh"><h3>This week</h3></div>
+            {upcoming.map((j) => (
+              <div
+                key={j.id}
+                style={{
+                  padding: "10px 14px",
+                  borderBottom: "1px solid var(--ln)",
+                  fontSize: 12,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div className="bold">{j.title}</div>
+                  <div style={{ color: "var(--s50)", fontSize: 10, fontFamily: "var(--mono)" }}>{j.date}</div>
                 </div>
+                <span className="pill n">{j.svc}</span>
               </div>
             ))}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className="block">
-            <div className="block-hdr"><div><h3>Spend by category</h3><div className="sub">Last 30 days</div></div></div>
-            <div className="block-body">
-              <div className="hbar">
-                {SPEND.map((r, i) => (
-                  <div key={i} className="hbar-row">
-                    <div className="n">{r.n}</div>
-                    <div className="t"><div className={`f ${i === 0 ? "coral" : ""}`} style={{ width: `${r.pct}%` }} /></div>
-                    <div className="v">{r.v}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="block">
-            <div className="block-hdr"><div><h3>Top spending sites</h3><div className="sub">This month</div></div></div>
-            <div>
-              {TOP_SITES.map((r, i) => (
-                <div key={i} className="site-row">
-                  <div>
-                    <div className="name">{r.n}</div>
-                    <div className="addr">{r.s}</div>
-                  </div>
-                  <div className={`rag rag-${r.rag}`} />
-                  <div className="metric">{r.v}</div>
-                  <div style={{ color: "var(--slate-30)" }}><Icon name="arrow" size={12} /></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts row */}
-      <div className="grid-2 mt-20">
-        <div className="block">
-          <div className="block-hdr">
-            <div><h3>Jobs this month</h3><div className="sub">Completed vs emergency</div></div>
-            <div className="actions"><span className="filter-chip">30 days <Icon name="down" size={10} /></span></div>
-          </div>
-          <div className="block-body" style={{ paddingTop: 24 }}>
-            <div className="chart-bars">
-              {CHART.map((m, i) => (
-                <div key={i} className="b" style={{ height: `${m.c * 3.5}px`, background: i === 11 ? "var(--coral)" : "var(--navy)" }}>
-                  {i === 11 && <span className="v">{m.c}</span>}
-                </div>
-              ))}
-            </div>
-            <div className="chart-labels">
-              {["M", "T", "W", "T", "F", "S", "S", "M", "T", "W", "T", "F"].map((d, i) => <span key={i}>{d}</span>)}
-            </div>
-          </div>
-        </div>
-
-        <div className="block">
-          <div className="block-hdr"><div><h3>SLA performance</h3><div className="sub">Response + completion, last 30 days</div></div></div>
-          <div className="block-body">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-              <div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--slate-50)", marginBottom: 10 }}>RESPONSE TIME</div>
-                <div style={{ fontSize: 36, fontWeight: 500, letterSpacing: "-0.02em" }}>94<span style={{ fontSize: 18, color: "var(--slate-50)" }}>%</span></div>
-                <div style={{ fontSize: 12, color: "var(--green)", marginTop: 4 }}>↑ 6% vs last month</div>
-                <div style={{ height: 6, background: "var(--slate-10)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
-                  <div style={{ width: "94%", height: "100%", background: "var(--green)" }} />
-                </div>
-                <div style={{ fontSize: 11, color: "var(--slate-50)", marginTop: 6, fontFamily: "var(--mono)" }}>SLA: 98% · Target: 90%</div>
-              </div>
-              <div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--slate-50)", marginBottom: 10 }}>COMPLETION TIME</div>
-                <div style={{ fontSize: 36, fontWeight: 500, letterSpacing: "-0.02em" }}>88<span style={{ fontSize: 18, color: "var(--slate-50)" }}>%</span></div>
-                <div style={{ fontSize: 12, color: "var(--amber)", marginTop: 4 }}>↓ 2% vs last month</div>
-                <div style={{ height: 6, background: "var(--slate-10)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
-                  <div style={{ width: "88%", height: "100%", background: "var(--amber)" }} />
-                </div>
-                <div style={{ fontSize: 11, color: "var(--slate-50)", marginTop: 6, fontFamily: "var(--mono)" }}>SLA: 85% · Target: 85%</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

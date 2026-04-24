@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Icon } from "./icons";
-import { PortalNotificationBell } from "./portal-notification-bell";
+import { ACCOUNT_TYPES, getAccountMeta, t as labelFor } from "@/lib/account-type";
+import { NOTIFICATIONS_MOCK } from "@/lib/mocks/portal-v2";
+import { OnboardingModal } from "./onboarding-modal";
 
 interface PortalShellProps {
   accountName: string;
@@ -16,209 +17,289 @@ interface PortalShellProps {
   children: React.ReactNode;
 }
 
-const NAV = [
-  {
-    group: "OPERATIONS",
-    items: [
-      { href: "/", icon: "dashboard", label: "Dashboard" },
-      { href: "/requests", icon: "requests", label: "Requests", count: "3" },
-      { href: "/jobs", icon: "jobs", label: "Jobs", count: "9" },
-      { href: "/quotes", icon: "quotes", label: "Quotes & Approvals", count: "2", warn: true },
-    ],
-  },
-  {
-    group: "PORTFOLIO",
-    items: [
-      { href: "/sites", icon: "sites", label: "Sites" },
-      { href: "/compliance", icon: "compliance", label: "Compliance", count: "2", warn: true },
-    ],
-  },
-  {
-    group: "RECORDS",
-    items: [
-      { href: "/reports", icon: "reports", label: "Reports" },
-      { href: "/invoices", icon: "invoices", label: "Invoices" },
-      { href: "/documents", icon: "documents", label: "Documents" },
-    ],
-  },
-  {
-    group: "ADMIN",
-    items: [
-      { href: "/team", icon: "team", label: "Team & Users" },
-      { href: "/notifications", icon: "notifications", label: "Notifications", count: "3", warn: true },
-      { href: "/settings", icon: "settings", label: "Settings" },
-    ],
-  },
-];
+type NavItem = { href: string; icon: string; label: string; count?: string; warn?: boolean };
+type NavGroup = { group: string; items: NavItem[] };
 
-const BREADCRUMB_MAP: Record<string, [string, string]> = {
-  "/": ["Operations", "Dashboard"],
-  "/requests": ["Operations", "Requests"],
-  "/jobs": ["Operations", "Jobs"],
-  "/quotes": ["Operations", "Quotes & Approvals"],
-  "/sites": ["Portfolio", "Sites"],
-  "/compliance": ["Portfolio", "Compliance"],
-  "/reports": ["Records", "Reports"],
-  "/invoices": ["Records", "Invoices"],
-  "/documents": ["Records", "Documents"],
-  "/team": ["Admin", "Team & Users"],
-  "/notifications": ["Admin", "Notifications"],
-  "/settings": ["Admin", "Settings"],
-};
-
-function getInitials(name: string | null, email: string): string {
-  if (name) {
-    return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-  }
-  return email.slice(0, 2).toUpperCase();
+function buildNav(): NavGroup[] {
+  return [
+    { group: "OVERVIEW", items: [
+      { href: "/", icon: "▧", label: "Dashboard" },
+      { href: "/live", icon: "◉", label: "Live View", count: "3", warn: true },
+    ] },
+    { group: "OPERATIONS", items: [
+      { href: "/requests", icon: "£", label: "Requests", count: "2", warn: true },
+      { href: "/jobs", icon: "⌘", label: "Jobs", count: "6" },
+    ] },
+    { group: "RECORDS", items: [
+      { href: "/history", icon: "◩", label: "History" },
+      { href: "/sites", icon: "◇", label: labelFor("sites") },
+    ] },
+    { group: "FINANCE", items: [
+      { href: "/invoices", icon: "▭", label: "Invoices", count: "1", warn: true },
+    ] },
+    { group: "ADMIN", items: [
+      { href: "/settings", icon: "△", label: "Settings" },
+    ] },
+  ];
 }
 
-export function PortalShell({
-  accountName,
-  accountType = "Business",
-  userEmail,
-  userFullName,
-  portalUserId,
-  accountId,
-  children,
-}: PortalShellProps) {
-  const pathname = usePathname();
-  const [roleOpen, setRoleOpen] = useState(false);
-  const initials = getInitials(userFullName, userEmail);
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
-  };
+const TITLES: Record<string, string> = {
+  "/": "Dashboard",
+  "/live": "Live View",
+  "/requests": "Requests",
+  "/jobs": "Jobs",
+  "/history": "History",
+  "/sites": "Properties",
+  "/invoices": "Invoices",
+  "/settings": "Settings",
+  "/tickets": "Tickets",
+};
 
-  const crumbs = BREADCRUMB_MAP[pathname] ?? BREADCRUMB_MAP[
-    Object.keys(BREADCRUMB_MAP).find((k) => k !== "/" && pathname.startsWith(k)) ?? "/"
-  ] ?? ["—", "—"];
+function pageTitle(pathname: string): string {
+  if (pathname.startsWith("/jobs/")) return "Job detail";
+  if (pathname.startsWith("/invoices/")) return "Invoice detail";
+  if (pathname.startsWith("/tickets/")) return "Ticket";
+  return TITLES[pathname] ?? "";
+}
+
+export function PortalShell({ accountName, children }: PortalShellProps) {
+  const pathname = usePathname() ?? "/";
+  const nav = buildNav();
+  const meta = getAccountMeta();
+
+  const [acctDropdown, setAcctDropdown] = useState(false);
+  const [showNotif, setShowNotif] = useState(false);
+
+  const acctRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (acctRef.current && !acctRef.current.contains(e.target as Node)) setAcctDropdown(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotif(false);
+    };
+    document.addEventListener("click", onDoc);
+    return () => document.removeEventListener("click", onDoc);
+  }, []);
+
+  const unread = NOTIFICATIONS_MOCK.filter((n) => n.unread).length;
+  const displayName = accountName || meta.type;
 
   return (
     <div className="app">
-      {/* ── Sidebar ───────────────────────────────────── */}
-      <aside className="sidebar">
-        <div className="sb-brand">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="https://wearemaster.com/favicon.png" alt="Fixfy" style={{ height: 22 }} />
-          <span style={{ color: "#fff", fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>fixfy</span>
-          <span className="env">UK</span>
-        </div>
-
-        {/* Role / account switcher */}
-        <div className="sb-role" style={{ position: "relative" }}>
-          <button className="sb-role-btn" onClick={() => setRoleOpen(!roleOpen)} type="button">
-            <div className="rs-avatar">{initials}</div>
-            <div className="rs-meta">
-              <div className="rs-name">{accountName || "Portal"}</div>
-              <div className="rs-company">{accountType}</div>
-            </div>
-            <div className="rs-caret"><Icon name="down" size={10} /></div>
-          </button>
-          {roleOpen && (
+      <aside className="sb">
+        <div className="sb-top">
+          <div className="sb-brand">
+            <span style={{ fontWeight: 600, letterSpacing: "-.02em", fontSize: 15 }}>Fixfy</span>
+            <span className="v">Client OS</span>
+          </div>
+          <div className="acct-sw">
+            <div className="acct-sw-lbl">Account</div>
             <div
-              style={{
-                position: "absolute", top: "100%", left: 14, right: 14,
-                background: "#fff", border: "1px solid var(--line)", borderRadius: 6,
-                zIndex: 10, boxShadow: "0 8px 32px rgba(2,0,64,0.18)", marginTop: 4, overflow: "hidden",
+              ref={acctRef}
+              className="acct-sel"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAcctDropdown((v) => !v);
               }}
             >
-              <div
-                style={{
-                  padding: "12px 14px", display: "flex", gap: 10, alignItems: "center",
-                  borderBottom: "1px solid var(--line)", background: "var(--slate-10)",
-                }}
-              >
-                <div style={{
-                  width: 30, height: 30, borderRadius: "50%", background: "var(--navy)",
-                  color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                  fontFamily: "var(--mono)", fontSize: 11, fontWeight: 500, flexShrink: 0,
-                }}>{initials}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{accountName}</div>
-                  <div style={{ fontSize: 11, color: "var(--slate-50)" }}>{accountType}</div>
-                </div>
-                <div style={{ color: "var(--coral)" }}><Icon name="check" size={14} /></div>
+              <div className="acct-ava" style={{ background: meta.accountColor }}>
+                {meta.initials}
               </div>
-              <form action="/api/auth/sign-out" method="POST">
-                <button
-                  type="submit"
-                  style={{
-                    width: "100%", padding: "10px 14px", fontSize: 12, color: "var(--red)",
-                    textAlign: "left", cursor: "pointer", background: "none", border: "none",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Sign out
-                </button>
-              </form>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="acct-name">{displayName}</div>
+                <div className="acct-type">{meta.type}</div>
+              </div>
+              <span className="acct-caret">▾</span>
+              {acctDropdown && (
+                <div className="acct-dropdown">
+                  {Object.entries(ACCOUNT_TYPES).map(([k, a]) => (
+                    <div
+                      key={k}
+                      className={`acct-opt${meta.key === k ? " on" : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAcctDropdown(false);
+                      }}
+                    >
+                      <div className="ai" style={{ background: a.accountColor }}>
+                        {a.initials}
+                      </div>
+                      <div>
+                        <div className="an">{a.type}</div>
+                        <div className="at">{a.shortTitle}</div>
+                      </div>
+                      {meta.key === k && (
+                        <span style={{ marginLeft: "auto", color: "var(--co)", fontSize: 12 }}>✓</span>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ padding: "8px 12px", background: "var(--s10)", borderTop: "1px solid var(--ln)" }}>
+                    <Link
+                      href={`${pathname}?onboarding=1`}
+                      onClick={() => setAcctDropdown(false)}
+                      style={{ display: "block", padding: "5px 8px", fontSize: 11, color: "var(--co)", fontWeight: 500 }}
+                    >
+                      ↗ Preview all business types
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Search */}
-        <div className="sb-search">
-          <div className="ic"><Icon name="search" size={13} /></div>
-          <input placeholder="Search jobs, sites, invoices…" />
-          <span className="kbd">⌘K</span>
-        </div>
-
-        {/* Navigation */}
         <nav className="sb-nav">
-          {NAV.map((grp) => (
+          {nav.map((grp) => (
             <div key={grp.group}>
-              <div className="sb-group-lbl">{grp.group}</div>
+              <div className="sbg">{grp.group}</div>
               {grp.items.map((it) => (
-                <Link
-                  key={it.href}
-                  href={it.href}
-                  className={`sb-item${isActive(it.href) ? " active" : ""}`}
-                >
-                  <div className="sb-ic"><Icon name={it.icon} size={14} /></div>
+                <Link key={it.href} href={it.href} className={`si${isActive(pathname, it.href) ? " on" : ""}`}>
+                  <span className="ic">{it.icon}</span>
                   <span>{it.label}</span>
-                  {it.count && (
-                    <span className={`sb-count${it.warn ? " warn" : ""}`}>{it.count}</span>
-                  )}
+                  {it.count && <span className={`ct${it.warn ? " w" : ""}`}>{it.count}</span>}
                 </Link>
               ))}
             </div>
           ))}
         </nav>
 
-        <div className="sb-bottom">
-          <div className="dot" />
-          <span>All systems operational</span>
-          <span style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>v3.4.1</span>
+        <div className="sb-foot">
+          <Link href="/requests?priority=P1" className="sos-btn" style={{ textDecoration: "none" }}>
+            <span className="sos-dot" />
+            <span>Emergency · P1 request</span>
+          </Link>
+          <div
+            style={{
+              fontSize: 10,
+              fontFamily: "var(--mono)",
+              color: "rgba(255,255,255,.28)",
+              textAlign: "center",
+              paddingTop: 4,
+            }}
+          >
+            Fixfy OS · All systems operational
+          </div>
         </div>
       </aside>
 
-      {/* ── Main ─────────────────────────────────────── */}
       <div className="main">
-        <header className="topbar">
-          <div className="crumbs">
-            <span>{accountName}</span>
-            <span className="sep">/</span>
-            <span>{crumbs[0]}</span>
-            <span className="sep">/</span>
-            <b>{crumbs[1]}</b>
-          </div>
-          <div className="spacer" />
-          <button className="topbar-icon" type="button" title="Help">
-            <Icon name="help" size={15} />
-          </button>
-          <PortalNotificationBell portalUserId={portalUserId} accountId={accountId} />
-          <div className="topbar-user">
-            <div className="ava">{initials}</div>
-            <div>
-              <div className="n">{userFullName || userEmail}</div>
-              <div className="r">{accountType}</div>
-            </div>
-          </div>
-        </header>
-
-        {children}
+        <Topbar
+          pathname={pathname}
+          accountName={displayName}
+          unread={unread}
+          showNotif={showNotif}
+          setShowNotif={setShowNotif}
+          notifRef={notifRef}
+        />
+        <div className="scroll">{children}</div>
       </div>
+
+      <Suspense fallback={null}>
+        <OnboardingModal />
+      </Suspense>
     </div>
   );
 }
+
+function Topbar({
+  pathname,
+  accountName,
+  unread,
+  showNotif,
+  setShowNotif,
+  notifRef,
+}: {
+  pathname: string;
+  accountName: string;
+  unread: number;
+  showNotif: boolean;
+  setShowNotif: (v: boolean) => void;
+  notifRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const meta = getAccountMeta();
+  const title = pageTitle(pathname);
+
+  return (
+    <header className="topbar">
+      <div className="tb-title">
+        {title}
+        <Link
+          href={`${pathname}?onboarding=1`}
+          className="tb-preview-chip"
+          title="Preview other business types"
+          style={{ textDecoration: "none" }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--co)" }} />
+          {meta.type} preview · switch
+        </Link>
+      </div>
+      <div style={{ flex: 1 }} />
+      <div className="tb-ic" title="Help">?</div>
+      <div
+        ref={notifRef}
+        className="tb-ic"
+        style={{ position: "relative" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowNotif(!showNotif);
+        }}
+      >
+        🔔 {unread > 0 && <span className="tb-notif" />}
+        {showNotif && (
+          <div className="notif-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="notif-hdr">
+              <span>Notifications</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--co)", cursor: "pointer" }}>
+                Mark all read
+              </span>
+            </div>
+            {NOTIFICATIONS_MOCK.map((n, i) => (
+              <div key={i} className={`nitem${n.unread ? " unread" : ""}`}>
+                <div className="n-lbl">{n.lbl}</div>
+                <div className="n-body">{n.body}</div>
+                <div className="n-time">{n.time}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "4px 10px 4px 5px",
+          border: "1px solid var(--ln)",
+          borderRadius: 20,
+        }}
+      >
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            background: meta.accountColor,
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "var(--mono)",
+            fontSize: 10,
+            fontWeight: 500,
+          }}
+        >
+          {meta.initials}
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 500 }}>{accountName}</span>
+      </div>
+    </header>
+  );
+}
+
+export default PortalShell;
