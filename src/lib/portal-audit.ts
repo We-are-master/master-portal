@@ -12,12 +12,6 @@
  * which adds 'ticket' to the entity_type CHECK constraint. Other
  * entity types ('request', 'quote', 'invoice', 'account') are already
  * accepted by the existing constraint from mig 005.
- * Best-effort INSERT into public.audit_logs via the service-role client.
- * Swallows errors so observability work never aborts a user request.
- *
- * Pairs with master-os migration that allows entity_type='ticket' in
- * the audit_logs CHECK. Until that ships, ticket logs are silently
- * dropped (warn to console).
  */
 import { createServiceClient } from "./supabase/service";
 
@@ -34,15 +28,6 @@ export type PortalAuditAction =
 
 export interface PortalAuditEntry {
   entityType: PortalAuditEntity;
-  entityId: string;
-  entityRef?: string;
-  action: PortalAuditAction;
-  userId: string;
-  userName?: string | null;
-  fieldName?: string;
-  oldValue?: string | null;
-  newValue?: string | null;
-  metadata?: Record<string, unknown>;
   entityId:   string;
   entityRef?: string;
   action:     PortalAuditAction;
@@ -73,8 +58,8 @@ export async function logPortalAudit(entry: PortalAuditEntry): Promise<void> {
       },
     });
     if (error) {
-      // Swallow — most likely cause is the entity_type CHECK rejecting
-      // 'ticket' before mig 153 ships. Log so we notice in Sentry.
+      // Most likely cause is the entity_type CHECK rejecting 'ticket'
+      // before mig 153 ships. Log so we notice in Sentry.
       console.warn("[portal-audit] insert failed:", error.message, { entry });
     }
   } catch (err) {

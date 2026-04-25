@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SitesPage() {
   const auth = await requirePortalUserOrRedirect();
-  const [properties, compliance, ppm, documents, jobs] = await Promise.all([
+  const [properties, compliance, ppm, documents, jobsPage] = await Promise.all([
     fetchAccountProperties(auth.accountId),
     fetchAccountCompliance(auth.accountId),
     fetchPortalPpmPlans(auth.accountId),
@@ -23,7 +23,7 @@ export default async function SitesPage() {
       compliance={compliance}
       ppm={ppm}
       documents={documents}
-      jobs={jobs}
+      jobs={jobsPage.items}
     />
   );
 }

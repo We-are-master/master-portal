@@ -40,7 +40,7 @@ function isActive(status: string): boolean {
 export default async function DashboardPage() {
   const auth = await requirePortalUserOrRedirect();
 
-  const [kpis, jobs, properties, invoices, compliance, spendByService] = await Promise.all([
+  const [kpis, jobsPage, properties, invoices, compliance, spendByService] = await Promise.all([
     fetchPortalDashboardKpis(auth.accountId),
     fetchAccountJobs(auth.accountId),
     fetchAccountProperties(auth.accountId),
@@ -48,6 +48,7 @@ export default async function DashboardPage() {
     fetchAccountCompliance(auth.accountId),
     fetchAccountSpendByService(auth.accountId, 30),
   ]);
+  const jobs = jobsPage.items;
 
   // Roll up cert state by certificate_type for the dashboard summary.
   const CERT_GROUPS = ["gas_safe", "eicr", "pat", "fire_safety"] as const;

@@ -8,13 +8,13 @@ export const dynamic = "force-dynamic";
 
 export default async function RequestsPage() {
   const auth = await requirePortalUserOrRedirect();
-  const [requests, quotes] = await Promise.all([
+  const [requestsPage, quotesPage] = await Promise.all([
     fetchAccountRequests(auth.accountId),
     fetchAccountQuotes(auth.accountId),
   ]);
   return (
     <Suspense fallback={null}>
-      <RequestsClient requests={requests} quotes={quotes} />
+      <RequestsClient requests={requestsPage.items} quotes={quotesPage.items} />
     </Suspense>
   );
 }
