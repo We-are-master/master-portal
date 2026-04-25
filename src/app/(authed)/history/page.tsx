@@ -15,8 +15,8 @@ export default async function HistoryPage() {
     fetchAccountQuotes(auth.accountId),
   ]);
 
-  const jobs   = allJobs.filter((j)   => HISTORICAL_JOB_STATUSES.includes(j.status));
-  const quotes = allQuotes.filter((q) => HISTORICAL_QUOTE_STATUSES.includes(q.status));
+  const jobs   = allJobs.items.filter((j)   => HISTORICAL_JOB_STATUSES.includes(j.status));
+  const quotes = allQuotes.items.filter((q) => HISTORICAL_QUOTE_STATUSES.includes(q.status));
 
   return <HistoryClient jobs={jobs} quotes={quotes} />;
 }

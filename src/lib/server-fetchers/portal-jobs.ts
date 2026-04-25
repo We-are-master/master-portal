@@ -1,4 +1,10 @@
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { clampPageSize, decodeCursor, nextCursorFrom, type Page } from "./cursor";
+
+export interface PortalListOpts {
+  cursor?: string;
+  limit?:  number;
+}
 
 export interface PortalJobRow {
   id:               string;
@@ -20,8 +26,17 @@ export interface PortalJobDetail extends PortalJobRow {
   client_price: number;
 }
 
-export async function fetchAccountJobs(accountId: string): Promise<PortalJobRow[]> {
+/**
+ * Returns one page of jobs for an account, ordered by most recent first.
+ * Keyset pagination on (created_at DESC, id DESC).
+ */
+export async function fetchAccountJobs(
+  accountId: string,
+  opts: PortalListOpts = {},
+): Promise<Page<PortalJobRow>> {
   const supabase = await getServerSupabase();
+  const limit  = clampPageSize(opts.limit);
+  const cursor = decodeCursor(opts.cursor);
 
   const { data: clientRows } = await supabase
     .from("clients")
@@ -30,9 +45,9 @@ export async function fetchAccountJobs(accountId: string): Promise<PortalJobRow[
     .is("deleted_at", null)
     .limit(1000);
   const clientIds = ((clientRows ?? []) as Array<{ id: string }>).map((c) => c.id);
-  if (clientIds.length === 0) return [];
+  if (clientIds.length === 0) return { items: [], nextCursor: null };
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("jobs")
     .select(`
       id, reference, title, status, scheduled_date, scheduled_start_at,
@@ -42,10 +57,19 @@ export async function fetchAccountJobs(accountId: string): Promise<PortalJobRow[
     .in("client_id", clientIds)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .order("id", { ascending: false })
+    .limit(limit);
 
-  if (error || !data) return [];
-  return data as PortalJobRow[];
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.value},and(created_at.eq.${cursor.value},id.lt.${cursor.id})`,
+    );
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return { items: [], nextCursor: null };
+  const items = data as PortalJobRow[];
+  return { items, nextCursor: nextCursorFrom(items, "created_at", limit) };
 }
 
 /**

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { fetchPortalQuoteDetail } from "@/lib/server-fetchers/portal-quotes";
@@ -91,6 +92,24 @@ export async function POST(
       }),
     });
     const upstreamJson = await upstreamRes.json().catch(() => ({}));
+
+    // Audit trail (best-effort, non-blocking) — only on success.
+    if (upstreamRes.ok) {
+      void logPortalAudit({
+        entityType: "quote",
+        entityId:   quoteId,
+        entityRef:  quote.reference,
+        action:     "status_changed",
+        userId:     auth.portalUser.id,
+        userName:   auth.portalUser.full_name ?? auth.portalUser.email,
+        fieldName:  "status",
+        oldValue:   "awaiting_customer",
+        newValue:   action === "accept" ? "accepted" : "rejected",
+        metadata:   action === "reject" && typeof body.rejectionReason === "string"
+          ? { rejection_reason: body.rejectionReason }
+          : undefined,
+      });
+    }
 
     // Pass through the upstream status + body verbatim so the client gets
     // the same paymentLinkUrl / message shape it would have got from the

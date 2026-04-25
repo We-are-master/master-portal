@@ -1,4 +1,10 @@
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { clampPageSize, decodeCursor, nextCursorFrom, type Page } from "./cursor";
+
+export interface PortalListOpts {
+  cursor?: string;
+  limit?:  number;
+}
 
 export interface PortalRequestRow {
   id:               string;
@@ -12,11 +18,17 @@ export interface PortalRequestRow {
 }
 
 /**
- * Returns the most recent service requests for an account, scoped through
- * the clients.source_account_id FK chain. Bounded at 100 rows.
+ * Returns one page of service requests for an account, scoped through
+ * the clients.source_account_id FK chain. Keyset pagination on
+ * (created_at DESC, id DESC).
  */
-export async function fetchAccountRequests(accountId: string): Promise<PortalRequestRow[]> {
+export async function fetchAccountRequests(
+  accountId: string,
+  opts: PortalListOpts = {},
+): Promise<Page<PortalRequestRow>> {
   const supabase = await getServerSupabase();
+  const limit  = clampPageSize(opts.limit);
+  const cursor = decodeCursor(opts.cursor);
 
   const { data: clientRows } = await supabase
     .from("clients")
@@ -25,16 +37,25 @@ export async function fetchAccountRequests(accountId: string): Promise<PortalReq
     .is("deleted_at", null)
     .limit(1000);
   const clientIds = ((clientRows ?? []) as Array<{ id: string }>).map((c) => c.id);
-  if (clientIds.length === 0) return [];
+  if (clientIds.length === 0) return { items: [], nextCursor: null };
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("service_requests")
     .select("id, reference, service_type, status, description, property_address, owner_name, created_at")
     .in("client_id", clientIds)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .order("id", { ascending: false })
+    .limit(limit);
 
-  if (error || !data) return [];
-  return data as PortalRequestRow[];
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.value},and(created_at.eq.${cursor.value},id.lt.${cursor.id})`,
+    );
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return { items: [], nextCursor: null };
+  const items = data as PortalRequestRow[];
+  return { items, nextCursor: nextCursorFrom(items, "created_at", limit) };
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -99,6 +100,16 @@ export async function PATCH(req: NextRequest) {
     console.error("[portal/account/PATCH] update failed:", error);
     return NextResponse.json({ error: "We could not save your changes. Please try again." }, { status: 500 });
   }
+
+  // Audit trail (best-effort, non-blocking)
+  void logPortalAudit({
+    entityType: "account",
+    entityId:   auth.accountId,
+    action:     "updated",
+    userId:     auth.portalUser.id,
+    userName:   auth.portalUser.full_name ?? auth.portalUser.email,
+    metadata:   { fields: Object.keys(safePatch) },
+  });
 
   return NextResponse.json({ ok: true });
 }

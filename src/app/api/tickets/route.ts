@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
@@ -173,6 +174,17 @@ export async function POST(req: NextRequest) {
     sender_name: portalUser.full_name ?? portalUser.email,
     body:        message,
     attachments: attachmentUrls.length > 0 ? attachmentUrls : [],
+  });
+
+  // Audit trail (best-effort, non-blocking)
+  void logPortalAudit({
+    entityType: "ticket",
+    entityId:   ticketId,
+    entityRef:  reference,
+    action:     "created",
+    userId:     portalUser.id,
+    userName:   portalUser.full_name ?? portalUser.email,
+    metadata:   { type, priority, job_id: validJobId, attachment_count: attachmentUrls.length },
   });
 
   // Return immediately — don't block the user waiting for the email.

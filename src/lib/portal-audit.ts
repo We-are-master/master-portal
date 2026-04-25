@@ -1,12 +1,17 @@
 /**
  * Portal-side audit log helper.
  *
- * Best-effort INSERT into public.audit_logs via the service-role client.
- * Swallows errors so observability work never aborts a user request.
+ * Writes a row into `public.audit_logs` via the service role client so
+ * RLS doesn't block. **Best-effort** — if the insert fails (e.g. the
+ * mig 153 entity_type extension hasn't been applied yet), we log a
+ * warning and return without throwing so the parent request still
+ * succeeds. The audit trail is observability, not correctness — never
+ * worth aborting a user-visible operation over.
  *
- * Pairs with master-os migration that allows entity_type='ticket' in
- * the audit_logs CHECK. Until that ships, ticket logs are silently
- * dropped (warn to console).
+ * Pairs with master-os migration 153_audit_logs_extend_for_portal.sql,
+ * which adds 'ticket' to the entity_type CHECK constraint. Other
+ * entity types ('request', 'quote', 'invoice', 'account') are already
+ * accepted by the existing constraint from mig 005.
  */
 import { createServiceClient } from "./supabase/service";
 
@@ -53,6 +58,8 @@ export async function logPortalAudit(entry: PortalAuditEntry): Promise<void> {
       },
     });
     if (error) {
+      // Most likely cause is the entity_type CHECK rejecting 'ticket'
+      // before mig 153 ships. Log so we notice in Sentry.
       console.warn("[portal-audit] insert failed:", error.message, { entry });
     }
   } catch (err) {

@@ -1,4 +1,10 @@
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { clampPageSize, decodeCursor, nextCursorFrom, type Page } from "./cursor";
+
+export interface PortalListOpts {
+  cursor?: string;
+  limit?:  number;
+}
 
 export interface PortalQuoteRow {
   id:               string;
@@ -38,11 +44,17 @@ const PORTAL_VISIBLE_QUOTE_STATUSES = [
 ];
 
 /**
- * Returns the most recent quotes for an account that are visible in the
+ * Returns one page of quotes for an account that are visible in the
  * portal. Drafts and in-survey quotes are hidden from the customer.
+ * Keyset pagination on (created_at DESC, id DESC).
  */
-export async function fetchAccountQuotes(accountId: string): Promise<PortalQuoteRow[]> {
+export async function fetchAccountQuotes(
+  accountId: string,
+  opts: PortalListOpts = {},
+): Promise<Page<PortalQuoteRow>> {
   const supabase = await getServerSupabase();
+  const limit  = clampPageSize(opts.limit);
+  const cursor = decodeCursor(opts.cursor);
 
   const { data: clientRows } = await supabase
     .from("clients")
@@ -51,19 +63,28 @@ export async function fetchAccountQuotes(accountId: string): Promise<PortalQuote
     .is("deleted_at", null)
     .limit(1000);
   const clientIds = ((clientRows ?? []) as Array<{ id: string }>).map((c) => c.id);
-  if (clientIds.length === 0) return [];
+  if (clientIds.length === 0) return { items: [], nextCursor: null };
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("quotes")
     .select("id, reference, title, status, total_value, deposit_required, client_name, property_address, created_at")
     .in("client_id", clientIds)
     .is("deleted_at", null)
     .in("status", PORTAL_VISIBLE_QUOTE_STATUSES)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .order("id", { ascending: false })
+    .limit(limit);
 
-  if (error || !data) return [];
-  return data as PortalQuoteRow[];
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.value},and(created_at.eq.${cursor.value},id.lt.${cursor.id})`,
+    );
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return { items: [], nextCursor: null };
+  const items = data as PortalQuoteRow[];
+  return { items, nextCursor: nextCursorFrom(items, "created_at", limit) };
 }
 
 /**
