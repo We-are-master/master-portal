@@ -10,8 +10,11 @@ export default async function PortalTicketsPage() {
   const auth    = await requirePortalUserOrRedirect();
   const supabase = await getServerSupabase();
 
-  const [tickets, clientRowsRes] = await Promise.all([
-    fetchAccountTickets(auth.accountId),
+  const [ticketsPage, clientRowsRes] = await Promise.all([
+    // First page only — the keyset-cursor API on fetchAccountTickets is
+    // already in place for "Load more" UX in a follow-up PR (needs a
+    // new /api/tickets/list endpoint + client-side append).
+    fetchAccountTickets(auth.accountId, { limit: 100 }),
     supabase
       .from("clients")
       .select("id")
@@ -35,7 +38,7 @@ export default async function PortalTicketsPage() {
 
   return (
     <Suspense fallback={null}>
-      <TicketsClient tickets={tickets as PortalTicketRow[]} jobs={jobs} />
+      <TicketsClient tickets={ticketsPage.items as PortalTicketRow[]} jobs={jobs} />
     </Suspense>
   );
 }
