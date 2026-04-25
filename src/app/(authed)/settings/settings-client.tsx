@@ -1,214 +1,320 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Save, Lock } from "lucide-react";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import type { PortalAccountSettings } from "@/lib/server-fetchers/portal-account";
+import type { PortalAccountUser } from "@/lib/server-fetchers/portal-account-users";
+import type {
+  PortalAccountSettingsRow,
+  PortalNotificationPref,
+} from "@/lib/server-fetchers/portal-settings";
 
-interface PortalSettingsClientProps {
-  account: PortalAccountSettings;
-  portalUser: {
-    email:     string;
-    full_name: string | null;
-  };
+type Tab = "notifications" | "account" | "integrations" | "users" | "compliance";
+
+const TABS: { id: Tab; l: string }[] = [
+  { id: "notifications", l: "Notifications" },
+  { id: "account",       l: "Account Details" },
+  { id: "users",         l: "Users & Access" },
+  { id: "compliance",    l: "Compliance Automation" },
+  { id: "integrations",  l: "Integrations" },
+];
+
+const NOTIF_TYPES: Array<{ id: string; label: string; desc: string }> = [
+  { id: "quote_submitted", label: "Quote submitted",   desc: "When a partner returns a quote" },
+  { id: "compliance_due",  label: "Compliance due",    desc: "Cert about to expire" },
+  { id: "job_overdue",     label: "Job overdue",       desc: "Job past its scheduled date" },
+  { id: "invoice_issued",  label: "Invoice issued",    desc: "New invoice posted to the account" },
+  { id: "weekly_digest",   label: "Weekly digest",     desc: "Summary every Monday 08:00" },
+  { id: "sla_breach",      label: "SLA breach",        desc: "P1/P2 about to miss SLA" },
+];
+
+interface Props {
+  account:       PortalAccountSettings | null;
+  settings:      PortalAccountSettingsRow | null;
+  prefs:         PortalNotificationPref[];
+  users:         PortalAccountUser[];
+  currentUserId: string;
 }
 
-export function PortalSettingsClient({ account, portalUser }: PortalSettingsClientProps) {
-  const router = useRouter();
-  const [contactName,   setContactName]   = useState(account.contact_name ?? "");
-  const [financeEmail,  setFinanceEmail]  = useState(account.finance_email ?? "");
-  const [contactNumber, setContactNumber] = useState(account.contact_number ?? "");
-  const [address,       setAddress]       = useState(account.address ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+export function SettingsClient({ account, settings, prefs, users, currentUserId }: Props) {
+  const [tab, setTab] = useState<Tab>("notifications");
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-    if (!contactName.trim()) {
-      setError("Contact name is required.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/account", {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          contact_name:   contactName.trim(),
-          finance_email:  financeEmail.trim(),
-          contact_number: contactNumber.trim(),
-          address:        address.trim(),
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(typeof json.error === "string" ? json.error : "We could not save your changes.");
-        setSaving(false);
-        return;
+  return (
+    <div className="page">
+      <div className="ph">
+        <div>
+          <h1>Settings</h1>
+          <p className="sub">Control notifications, integrations, users and compliance automation for your account.</p>
+        </div>
+      </div>
+
+      <div className="sg">
+        <nav className="snav">
+          {TABS.map((t) => (
+            <a key={t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
+              {t.l}
+            </a>
+          ))}
+        </nav>
+        <div>
+          {tab === "notifications" && <NotificationsTab initial={prefs} />}
+          {tab === "account"       && <AccountTab account={account} settings={settings} />}
+          {tab === "users"         && <UsersTab users={users} currentUserId={currentUserId} />}
+          {tab === "compliance"    && <PlaceholderTab title="Compliance Automation" />}
+          {tab === "integrations"  && <PlaceholderTab title="Integrations" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlaceholderTab({ title }: { title: string }) {
+  return (
+    <div className="sb2">
+      <h4>{title}</h4>
+      <div className="sd">This section ships in a future release.</div>
+    </div>
+  );
+}
+
+function NotificationsTab({ initial }: { initial: PortalNotificationPref[] }) {
+  const channels = ["email", "push"] as const;
+  const [pending, startTransition] = useTransition();
+
+  const initialMap = new Map<string, boolean>();
+  for (const p of initial) initialMap.set(`${p.notification_type}::${p.channel}`, p.enabled);
+  const [state, setState] = useState<Map<string, boolean>>(initialMap);
+
+  const get = (t: string, c: string): boolean => state.get(`${t}::${c}`) ?? true;
+
+  const toggle = (t: string, c: string) => {
+    const next = !get(t, c);
+    setState((m) => {
+      const copy = new Map(m);
+      copy.set(`${t}::${c}`, next);
+      return copy;
+    });
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/account/notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ notification_type: t, channel: c, enabled: next, scope: "user" }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        setState((m) => {
+          const copy = new Map(m);
+          copy.set(`${t}::${c}`, !next);
+          return copy;
+        });
+        toast.error("Couldn't save that preference. Try again?");
+        console.error(err);
       }
-      setSuccess(true);
-      router.refresh();
-    } catch (err) {
-      console.error("[portal/settings] save error:", err);
-      setError("We could not save your changes. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    });
+  };
+
+  return (
+    <div className="sb2">
+      <h4>Notification preferences</h4>
+      <div className="sd">Choose how and when Fixfy alerts you. Toggles save instantly.</div>
+      <table className="tbl" style={{ marginTop: 6 }}>
+        <thead>
+          <tr>
+            <th>Notification</th>
+            {channels.map((c) => (
+              <th key={c} style={{ textAlign: "center" }}>{c.toUpperCase()}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {NOTIF_TYPES.map((row) => (
+            <tr key={row.id}>
+              <td>
+                <div className="b">{row.label}</div>
+                <div className="mu">{row.desc}</div>
+              </td>
+              {channels.map((c) => (
+                <td key={c} style={{ textAlign: "center" }}>
+                  <div
+                    className={`tog${get(row.id, c) ? " on" : ""}`}
+                    onClick={() => toggle(row.id, c)}
+                    style={{ cursor: pending ? "wait" : "pointer", display: "inline-block" }}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AccountTab({
+  account,
+  settings,
+}: {
+  account: PortalAccountSettings | null;
+  settings: PortalAccountSettingsRow | null;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [legalName,    setLegalName]    = useState(settings?.legal_name ?? account?.company_name ?? "");
+  const [vatPct,       setVatPct]       = useState(String(settings?.vat_percentage ?? 20));
+  const [currency,     setCurrency]     = useState(settings?.currency ?? "GBP");
+  const [paymentTerms, setPaymentTerms] = useState(String(settings?.default_payment_terms_days ?? 30));
+
+  const save = () => {
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/account/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            legal_name:                 legalName,
+            vat_percentage:             Number(vatPct),
+            currency:                   currency,
+            default_payment_terms_days: Number(paymentTerms),
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        toast.success("Settings saved.");
+      } catch (err) {
+        toast.error("Couldn't save settings. Try again?");
+        console.error(err);
+      }
+    });
+  };
+
+  if (!account) {
+    return <div className="sb2"><h4>Account Details</h4><div className="sd">Account not found.</div></div>;
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-black text-text-primary">Account settings</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Manage how the Master team reaches you and where invoices are sent.
-        </p>
-      </div>
-
-      {/* Editable fields */}
-      <form onSubmit={handleSubmit}>
-        <div className="bg-card rounded-2xl border border-border p-6 lg:p-8 space-y-5">
-          <h2 className="text-base font-bold text-text-primary">Contact details</h2>
-
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 rounded-xl px-4 py-3 text-sm">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400 rounded-xl px-4 py-3 text-sm">
-              Saved.
-            </div>
-          )}
-
-          <Field label="Contact name" required>
-            <input
-              type="text"
-              className={inputCls}
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              disabled={saving}
-              maxLength={200}
-            />
-          </Field>
-
-          <Field label="Finance email" hint="Where invoices and payment receipts will be sent.">
-            <input
-              type="text"
-              className={inputCls}
-              value={financeEmail}
-              onChange={(e) => setFinanceEmail(e.target.value)}
-              placeholder="finance@yourcompany.com"
-              disabled={saving}
-              maxLength={200}
-              autoCapitalize="none"
-              autoCorrect="off"
-            />
-          </Field>
-
-          <Field label="Phone number">
-            <input
-              type="text"
-              className={inputCls}
-              value={contactNumber}
-              onChange={(e) => setContactNumber(e.target.value)}
-              placeholder="+44 20 1234 5678"
-              disabled={saving}
-              maxLength={60}
-            />
-          </Field>
-
-          <Field label="Billing address">
-            <textarea
-              className={`${inputCls} resize-none`}
-              rows={3}
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Your business address"
-              disabled={saving}
-              maxLength={500}
-            />
-          </Field>
-
-          <div className="flex items-center justify-end pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-bold hover:bg-orange-700 transition-colors disabled:opacity-60"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? "Saving..." : "Save changes"}
-            </button>
-          </div>
+    <div className="sb2">
+      <h4>Account details</h4>
+      <div className="sd">Company-level information used on invoices and reports.</div>
+      <div className="fr">
+        <div className="f">
+          <label>Company name</label>
+          <input value={account.company_name} disabled />
         </div>
-      </form>
+        <div className="f">
+          <label>Legal name</label>
+          <input value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+        </div>
+      </div>
+      <div className="fr">
+        <div className="f">
+          <label>Admin email</label>
+          <input value={account.email} disabled />
+        </div>
+        <div className="f">
+          <label>Phone</label>
+          <input value={account.contact_number ?? ""} disabled />
+        </div>
+      </div>
+      <div className="fr">
+        <div className="f">
+          <label>VAT %</label>
+          <input
+            type="number"
+            value={vatPct}
+            onChange={(e) => setVatPct(e.target.value)}
+            min={0}
+            max={100}
+            step={0.5}
+          />
+        </div>
+        <div className="f">
+          <label>Currency</label>
+          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            <option value="GBP">GBP · £</option>
+            <option value="EUR">EUR · €</option>
+            <option value="USD">USD · $</option>
+          </select>
+        </div>
+      </div>
+      <div className="fr">
+        <div className="f">
+          <label>Default payment terms (days)</label>
+          <input
+            type="number"
+            value={paymentTerms}
+            onChange={(e) => setPaymentTerms(e.target.value)}
+            min={0}
+            max={120}
+          />
+        </div>
+        <div></div>
+      </div>
+      <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button className="btn btn-p btn-sm" onClick={save} disabled={pending}>
+          {pending ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
-      {/* Read-only fields — managed by Master */}
-      <div className="bg-card rounded-2xl border border-border p-6 lg:p-8 space-y-5">
+function UsersTab({
+  users,
+  currentUserId,
+}: {
+  users:         PortalAccountUser[];
+  currentUserId: string;
+}) {
+  return (
+    <div className="sb2">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <h2 className="text-base font-bold text-text-primary">Account profile</h2>
-          <p className="text-xs text-text-tertiary mt-1 flex items-center gap-1.5">
-            <Lock className="w-3 h-3" />
-            Managed by the Master team. Email{" "}
-            <a href="mailto:hello@wearemaster.com" className="text-orange-600 font-medium">
-              hello@wearemaster.com
-            </a>{" "}
-            to change these.
-          </p>
+          <h4>Users &amp; Access</h4>
+          <div className="sd">Everyone in your account who can sign in to the portal.</div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <ReadOnlyField label="Company name" value={account.company_name} />
-          <ReadOnlyField label="Account email" value={account.email} />
-          <ReadOnlyField label="Industry" value={account.industry || "—"} />
-          <ReadOnlyField label="Payment terms" value={account.payment_terms || "—"} />
-        </div>
+        <button className="btn btn-g btn-sm" disabled title="Inviting users ships in the next release">
+          + Invite user
+        </button>
       </div>
-
-      {/* Signed-in user */}
-      <div className="bg-card rounded-2xl border border-border p-6 lg:p-8">
-        <h2 className="text-base font-bold text-text-primary mb-4">Signed in as</h2>
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 flex items-center justify-center font-bold text-lg shrink-0">
-            {(portalUser.full_name?.[0] ?? portalUser.email[0]).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-text-primary truncate">
-              {portalUser.full_name || portalUser.email}
-            </p>
-            <p className="text-xs text-text-tertiary truncate">{portalUser.email}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const inputCls =
-  "w-full px-4 py-3 rounded-xl border border-border bg-surface-secondary text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition";
-
-interface FieldProps { label: string; required?: boolean; hint?: string; children: React.ReactNode }
-function Field({ label, required, hint, children }: FieldProps) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wide">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      {children}
-      {hint && <p className="text-xs text-text-tertiary mt-1.5">{hint}</p>}
-    </div>
-  );
-}
-
-interface ReadOnlyFieldProps { label: string; value: string }
-function ReadOnlyField({ label, value }: ReadOnlyFieldProps) {
-  return (
-    <div>
-      <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-sm font-semibold text-text-primary truncate">{value}</p>
+      {users.length === 0 ? (
+        <div className="empty"><div className="ic-lg">·</div><div className="t">No users in this account</div></div>
+      ) : (
+        <table className="tbl" style={{ marginTop: 6 }}>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Last sign-in</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td>
+                  <div className="b">
+                    {u.full_name || "—"}
+                    {u.id === currentUserId && (
+                      <span className="pill n" style={{ marginLeft: 6 }}>You</span>
+                    )}
+                  </div>
+                </td>
+                <td style={{ fontSize: 12 }}>{u.email}</td>
+                <td className="mono mu">
+                  {u.last_signed_in_at
+                    ? new Date(u.last_signed_in_at).toLocaleDateString("en-GB")
+                    : "Never"}
+                </td>
+                <td>
+                  <span className={`pill ${u.is_active ? "ok" : "n"}`}>
+                    <span className="d" />
+                    {u.is_active ? "Active" : "Inactive"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

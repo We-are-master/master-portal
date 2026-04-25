@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,15 @@ function pickAllowed(input: Record<string, unknown>): Record<string, unknown> {
 export async function PATCH(req: NextRequest) {
   const auth = await requirePortalUser();
   if (auth instanceof NextResponse) return auth;
+
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`portal-acct-patch:${auth.user.id}:${ip}`, 10, 60 * 60 * 1000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   let body: Record<string, unknown>;
   try {
