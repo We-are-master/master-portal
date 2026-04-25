@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requirePortalUser } from "@/lib/portal-auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +11,18 @@ export const dynamic = "force-dynamic";
  * an unread count. Uses the service client only to avoid the cost of
  * re-checking RLS — the auth gate already binds us to one portal user.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requirePortalUser();
   if (auth instanceof NextResponse) return auth;
+
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`portal-notif-list:${auth.user.id}:${ip}`, 60, 60 * 1000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   const admin = createServiceClient();
   const { data: rows, error } = await admin
