@@ -7,6 +7,7 @@ export interface PortalJobRow {
   status:           string;
   scheduled_date:   string | null;
   scheduled_start_at: string | null;
+  property_id:      string | null;
   property_address: string | null;
   partner_name:     string | null;
   current_phase:    number | null;
@@ -35,7 +36,8 @@ export async function fetchAccountJobs(accountId: string): Promise<PortalJobRow[
     .from("jobs")
     .select(`
       id, reference, title, status, scheduled_date, scheduled_start_at,
-      property_address, partner_name, current_phase, total_phases, created_at
+      property_id, property_address, partner_name, current_phase,
+      total_phases, created_at
     `)
     .in("client_id", clientIds)
     .is("deleted_at", null)
@@ -59,8 +61,8 @@ export async function fetchPortalJobDetail(
     .from("jobs")
     .select(`
       id, reference, title, status, scheduled_date, scheduled_start_at,
-      property_address, partner_name, current_phase, total_phases,
-      scope, client_price, client_id, created_at
+      property_id, property_address, partner_name, current_phase,
+      total_phases, scope, client_price, client_id, created_at
     `)
     .eq("id", jobId)
     .is("deleted_at", null)
@@ -88,6 +90,7 @@ export async function fetchPortalJobDetail(
     status:             (j.status as string) ?? "",
     scheduled_date:     (j.scheduled_date as string | null) ?? null,
     scheduled_start_at: (j.scheduled_start_at as string | null) ?? null,
+    property_id:        (j.property_id as string | null) ?? null,
     property_address:   (j.property_address as string | null) ?? null,
     partner_name:       (j.partner_name as string | null) ?? null,
     current_phase:      (j.current_phase as number | null) ?? null,
