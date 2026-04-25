@@ -4,8 +4,10 @@ import { useMemo, useState } from "react";
 import { Drawer, DrawerBody, DrawerFooter, DrawerHeader, DrawerTabs } from "@/components/portal/drawer";
 import { t } from "@/lib/account-type";
 import type { PortalComplianceCert } from "@/lib/server-fetchers/portal-compliance";
+import type { PortalJobRow } from "@/lib/server-fetchers/portal-jobs";
 import type { PortalPpmPlan } from "@/lib/server-fetchers/portal-ppm";
 import type { PortalPropertyRow } from "@/lib/server-fetchers/portal-properties";
+import type { PortalPropertyDocument } from "@/lib/server-fetchers/portal-property-detail";
 
 type ViewMode = "grid" | "list";
 type Filter = "all" | "with_jobs" | "no_jobs";
@@ -15,6 +17,8 @@ interface Props {
   properties: PortalPropertyRow[];
   compliance: PortalComplianceCert[];
   ppm:        PortalPpmPlan[];
+  documents:  PortalPropertyDocument[];
+  jobs:       PortalJobRow[];
 }
 
 const CERT_PILL: Record<string, { l: string; cls: string }> = {
@@ -24,7 +28,7 @@ const CERT_PILL: Record<string, { l: string; cls: string }> = {
   missing:  { l: "Missing",   cls: "r" },
 };
 
-export function SitesClient({ properties, compliance, ppm }: Props) {
+export function SitesClient({ properties, compliance, ppm, documents, jobs }: Props) {
   const [view, setView]       = useState<ViewMode>("grid");
   const [filter, setFilter]   = useState<Filter>("all");
   const [openId, setOpenId]   = useState<string | null>(null);
@@ -188,6 +192,8 @@ export function SitesClient({ properties, compliance, ppm }: Props) {
           property={open}
           compliance={compliance.filter((c) => c.property_id === open.id)}
           ppm={ppm.filter((p) => p.property_id === open.id)}
+          documents={documents.filter((d) => d.property_id === open.id)}
+          jobs={jobs.filter((j) => j.property_id === open.id)}
           onClose={() => setOpenId(null)}
         />
       )}
@@ -199,11 +205,15 @@ function PropertyDrawer({
   property,
   compliance,
   ppm,
+  documents,
+  jobs,
   onClose,
 }: {
   property:   PortalPropertyRow;
   compliance: PortalComplianceCert[];
   ppm:        PortalPpmPlan[];
+  documents:  PortalPropertyDocument[];
+  jobs:       PortalJobRow[];
   onClose:    () => void;
 }) {
   const [tab, setTab] = useState<DrawerTab>("overview");
@@ -217,8 +227,8 @@ function PropertyDrawer({
             { id: "overview",   label: "Overview" },
             { id: "ppm",        label: t("ppm"),        count: ppm.length },
             { id: "compliance", label: "Compliance",    count: compliance.length },
-            { id: "documents",  label: "Documents" },
-            { id: "history",    label: "Job history" },
+            { id: "documents",  label: "Documents",     count: documents.length },
+            { id: "history",    label: "Job history",   count: jobs.length },
           ]}
           active={tab}
           onChange={setTab}
@@ -312,19 +322,71 @@ function PropertyDrawer({
         )}
 
         {tab === "documents" && (
-          <div className="empty">
-            <div className="ic-lg">📁</div>
-            <div className="t">Documents view ships in the next release</div>
-            <div className="s">Per-property document library with category filtering is coming soon.</div>
-          </div>
+          documents.length === 0 ? (
+            <div className="empty">
+              <div className="ic-lg">📁</div>
+              <div className="t">No documents on file yet</div>
+              <div className="s">Documents uploaded by your team or Fixfy staff will appear here.</div>
+            </div>
+          ) : (
+            <div className="blk">
+              {documents.map((d) => (
+                <div key={d.id} className="doc-row">
+                  <div className={`doc-ic ${d.document_type === "compliance" ? "enc" : d.file_name.toLowerCase().endsWith(".pdf") ? "pdf" : "img"}`}>
+                    {d.file_name.split(".").pop()?.slice(0, 4).toUpperCase() ?? "DOC"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div className="bold">{d.file_name}</div>
+                    <div className="mu mono">
+                      {d.document_type.replace(/_/g, " ")} · {d.size_bytes ? `${(d.size_bytes / 1024).toFixed(0)} KB` : "—"}
+                      {" · "}{new Date(d.created_at).toLocaleDateString("en-GB")}
+                    </div>
+                  </div>
+                  <button className="btn btn-g btn-sm">↓</button>
+                </div>
+              ))}
+            </div>
+          )
         )}
 
         {tab === "history" && (
-          <div className="empty">
-            <div className="ic-lg">📜</div>
-            <div className="t">Job history filtered to this {t("sitesSingular")}</div>
-            <div className="s">See the History page meanwhile for all jobs across the account.</div>
-          </div>
+          jobs.length === 0 ? (
+            <div className="empty">
+              <div className="ic-lg">📜</div>
+              <div className="t">No jobs for this {t("sitesSingular")} yet</div>
+            </div>
+          ) : (
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Date</th>
+                  <th>Partner</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((j) => {
+                  const date = j.scheduled_date ?? j.scheduled_start_at ?? j.created_at;
+                  return (
+                    <tr key={j.id}>
+                      <td>
+                        <div className="b">{j.title}</div>
+                        <div className="mu mono">{j.reference}</div>
+                      </td>
+                      <td className="mono mu">
+                        {date ? new Date(date).toLocaleDateString("en-GB") : "—"}
+                      </td>
+                      <td style={{ fontSize: 12 }}>{j.partner_name ?? "—"}</td>
+                      <td>
+                        <span className="pill n">{j.status.replace(/_/g, " ")}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )
         )}
       </DrawerBody>
 

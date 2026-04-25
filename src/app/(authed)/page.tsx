@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { requirePortalUserOrRedirect } from "@/lib/portal-auth";
 import { getAccountMeta, t } from "@/lib/account-type";
+import { fetchAccountCompliance } from "@/lib/server-fetchers/portal-compliance";
 import { fetchPortalDashboardKpis } from "@/lib/server-fetchers/portal-dashboard";
+import { fetchAccountInvoices } from "@/lib/server-fetchers/portal-invoices";
 import { fetchAccountJobs } from "@/lib/server-fetchers/portal-jobs";
 import { fetchAccountProperties } from "@/lib/server-fetchers/portal-properties";
+import { fetchAccountSpendByService } from "@/lib/server-fetchers/portal-spend";
 
 export const dynamic = "force-dynamic";
 
@@ -13,15 +16,6 @@ const AM = {
   service:     { name: "Marcus Reid",     title: "Account Manager", avatar: "👨‍💼" },
   enterprise:  { name: "Sarah Chen",      title: "Account Manager", avatar: "👩‍💼" },
 } as const;
-
-// Static placeholders — wired in PR 3 once compliance certs / spend RPCs ship.
-const CERT_ROLLUP = [
-  { l: "Gas Safe",   tot: 0, ok: 0, w: 0, r: 0 },
-  { l: "EICR",       tot: 0, ok: 0, w: 0, r: 0 },
-  { l: "PAT",        tot: 0, ok: 0, w: 0, r: 0 },
-  { l: "Fire Safety", tot: 0, ok: 0, w: 0, r: 0 },
-];
-const SPEND_BY_SERVICE: Array<{ n: string; pct: number; v: string }> = [];
 
 const STATUS_LABEL: Record<string, { l: string; cls: string }> = {
   scheduled:          { l: "Scheduled",       cls: "b" },
@@ -46,16 +40,44 @@ function isActive(status: string): boolean {
 export default async function DashboardPage() {
   const auth = await requirePortalUserOrRedirect();
 
-  const [kpis, jobs, properties, invoices] = await Promise.all([
+  const [kpis, jobs, properties, invoices, compliance, spendByService] = await Promise.all([
     fetchPortalDashboardKpis(auth.accountId),
     fetchAccountJobs(auth.accountId),
     fetchAccountProperties(auth.accountId),
-    // Outstanding total is already in kpis but reuse the rolled-up
-    // amount from invoices fetcher for the Spent MTD figure.
-    import("@/lib/server-fetchers/portal-invoices").then((m) =>
-      m.fetchAccountInvoices(auth.accountId),
-    ),
+    fetchAccountInvoices(auth.accountId),
+    fetchAccountCompliance(auth.accountId),
+    fetchAccountSpendByService(auth.accountId, 30),
   ]);
+
+  // Roll up cert state by certificate_type for the dashboard summary.
+  const CERT_GROUPS = ["gas_safe", "eicr", "pat", "fire_safety"] as const;
+  const certRollup = CERT_GROUPS.map((g) => {
+    const certs = compliance.filter((c) => c.certificate_type === g);
+    const tot = certs.length;
+    const ok  = certs.filter((c) => c.status === "ok").length;
+    const w   = certs.filter((c) => c.status === "expiring").length;
+    const r   = certs.filter((c) => c.status === "expired" || c.status === "missing").length;
+    const labelMap: Record<string, string> = {
+      gas_safe: "Gas Safe",
+      eicr: "EICR",
+      pat: "PAT",
+      fire_safety: "Fire Safety",
+    };
+    return { l: labelMap[g], tot, ok, w, r };
+  });
+
+  const expiries = compliance
+    .filter((c) => c.days_left <= 120)
+    .sort((a, b) => a.days_left - b.days_left)
+    .slice(0, 5);
+
+  const propNameMap = new Map<string, string>();
+  for (const p of properties) propNameMap.set(p.id, p.name);
+
+  const certAlerts = compliance.filter((c) => c.status !== "ok").length;
+
+  const totalSpend = spendByService.reduce((s, r) => s + Number(r.total_spend ?? 0), 0);
+  const maxSpend   = Math.max(1, ...spendByService.map((r) => Number(r.total_spend ?? 0)));
 
   const meta         = getAccountMeta();
   const am           = AM[meta.key];
@@ -168,15 +190,138 @@ export default async function DashboardPage() {
           <div className="blk">
             <div className="bh">
               <h3>Compliance overview</h3>
-              <Link href="/sites" className="btn btn-g btn-sm" style={{ textDecoration: "none" }}>Manage</Link>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {certAlerts > 0 && (
+                  <span className="pill w">
+                    <span className="d" />
+                    {certAlerts} alert{certAlerts > 1 ? "s" : ""}
+                  </span>
+                )}
+                <Link href="/sites" className="btn btn-g btn-sm" style={{ textDecoration: "none" }}>Manage</Link>
+              </div>
             </div>
-            <div className="bb">
-              <div className="kk" style={{ marginBottom: 8 }}>Coming in next release</div>
-              <p style={{ fontSize: 12, color: "var(--s50)" }}>
-                Compliance certificate tracking ships with the next backend update. We&rsquo;ll surface
-                Gas Safe / EICR / PAT / Fire-safety expiries here.
-              </p>
-            </div>
+            {compliance.length === 0 ? (
+              <div className="bb">
+                <p style={{ fontSize: 12, color: "var(--s50)" }}>
+                  No compliance certificates registered for your account yet. Your account manager
+                  registers them after each inspection.
+                </p>
+              </div>
+            ) : (
+              <div className="bb" style={{ padding: 0 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                  <div style={{ padding: 14, borderRight: "1px solid var(--ln)" }}>
+                    <div className="kk" style={{ marginBottom: 8 }}>Certificates across portfolio</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 6 }}>
+                      {certRollup.map((c) => {
+                        const pct = c.tot === 0 ? 0 : Math.round((c.ok / c.tot) * 100);
+                        return (
+                          <div key={c.l} style={{ border: "1px solid var(--ln)", borderRadius: 5, padding: "8px 10px" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--s50)" }}>
+                                {c.l}
+                              </span>
+                              <span
+                                style={{
+                                  fontFamily: "var(--mono)",
+                                  fontSize: 11,
+                                  fontWeight: 500,
+                                  color:
+                                    c.tot === 0 ? "var(--s50)" :
+                                    pct === 100 ? "var(--gr)" :
+                                    pct >= 85 ? "var(--am)" : "var(--rd)",
+                                }}
+                              >
+                                {c.tot === 0 ? "—" : `${pct}%`}
+                              </span>
+                            </div>
+                            {c.tot > 0 && (
+                              <>
+                                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                                  {Array.from({ length: c.tot }).map((_, i) => (
+                                    <div
+                                      key={i}
+                                      style={{
+                                        width: 4,
+                                        height: 10,
+                                        borderRadius: 1,
+                                        background:
+                                          i < c.ok ? "var(--gr)" : i < c.ok + c.w ? "var(--am)" : "var(--rd)",
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                                <div style={{ fontSize: 10, color: "var(--s50)", marginTop: 4 }}>
+                                  {c.ok}/{c.tot} compliant{c.w > 0 ? ` · ${c.w} expiring` : ""}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div style={{ padding: 14 }}>
+                    <div className="kk" style={{ marginBottom: 8 }}>Upcoming expiries (next 120 days)</div>
+                    {expiries.length === 0 ? (
+                      <span style={{ fontSize: 12, color: "var(--s50)" }}>Nothing expiring soon.</span>
+                    ) : (
+                      expiries.map((e, i) => (
+                        <div
+                          key={e.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "7px 0",
+                            borderBottom: i < expiries.length - 1 ? "1px solid var(--ln)" : "none",
+                            fontSize: 12,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: "50%",
+                              background:
+                                e.status === "ok" ? "var(--gr)" :
+                                e.status === "expiring" ? "var(--am)" : "var(--rd)",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {e.certificate_type.replace(/_/g, " ").toUpperCase()}
+                            </div>
+                            <div style={{ fontSize: 10, color: "var(--s50)", fontFamily: "var(--mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {e.property_id ? (propNameMap.get(e.property_id) ?? "—") : "Account-wide"}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div
+                              style={{
+                                fontFamily: "var(--mono)",
+                                fontSize: 11,
+                                fontWeight: 500,
+                                color:
+                                  e.days_left < 0 ? "var(--rd)" :
+                                  e.days_left < 30 ? "var(--rd)" :
+                                  e.days_left < 60 ? "var(--am)" : "var(--s70)",
+                              }}
+                            >
+                              {e.days_left < 0 ? `${Math.abs(e.days_left)}d ago` : `${e.days_left}d`}
+                            </div>
+                            <div style={{ fontSize: 9, color: "var(--s50)" }}>
+                              {new Date(e.expiry_date).toLocaleDateString("en-GB")}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -192,6 +337,53 @@ export default async function DashboardPage() {
                 <button className="am-btn">💬 WhatsApp</button>
               </div>
             </div>
+          </div>
+
+          <div className="blk">
+            <div className="bh">
+              <h3>Spend by service</h3>
+              <span style={{ fontSize: 11, color: "var(--s50)" }}>Last 30d</span>
+            </div>
+            {spendByService.length === 0 ? (
+              <div className="bb">
+                <span style={{ fontSize: 12, color: "var(--s50)" }}>
+                  No spend in the last 30 days.
+                </span>
+              </div>
+            ) : (
+              <div className="bb">
+                {spendByService.map((r) => {
+                  const pct = Math.round((Number(r.total_spend) / maxSpend) * 100);
+                  return (
+                    <div
+                      key={r.service_name}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "100px 1fr 80px",
+                        gap: 8,
+                        alignItems: "center",
+                        fontSize: 12,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <span className="bold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.service_name}
+                      </span>
+                      <div style={{ height: 5, background: "var(--s10)", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: "var(--n)", borderRadius: 3 }} />
+                      </div>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 11, textAlign: "right", color: "var(--s70)" }}>
+                        £{Number(r.total_spend).toLocaleString("en-GB", { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div style={{ borderTop: "1px solid var(--ln)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--s50)" }}>
+                  <span>Total</span>
+                  <span className="mono bold" style={{ color: "var(--ink)" }}>£{totalSpend.toLocaleString("en-GB", { maximumFractionDigits: 0 })}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="blk">
@@ -264,6 +456,3 @@ export default async function DashboardPage() {
   );
 }
 
-// Defensive: avoid unused-import warnings if these become referenced later.
-void CERT_ROLLUP;
-void SPEND_BY_SERVICE;

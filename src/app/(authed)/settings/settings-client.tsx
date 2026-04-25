@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { PortalAccountSettings } from "@/lib/server-fetchers/portal-account";
+import type { PortalAccountUser } from "@/lib/server-fetchers/portal-account-users";
 import type {
   PortalAccountSettingsRow,
   PortalNotificationPref,
@@ -28,12 +29,14 @@ const NOTIF_TYPES: Array<{ id: string; label: string; desc: string }> = [
 ];
 
 interface Props {
-  account:  PortalAccountSettings | null;
-  settings: PortalAccountSettingsRow | null;
-  prefs:    PortalNotificationPref[];
+  account:       PortalAccountSettings | null;
+  settings:      PortalAccountSettingsRow | null;
+  prefs:         PortalNotificationPref[];
+  users:         PortalAccountUser[];
+  currentUserId: string;
 }
 
-export function SettingsClient({ account, settings, prefs }: Props) {
+export function SettingsClient({ account, settings, prefs, users, currentUserId }: Props) {
   const [tab, setTab] = useState<Tab>("notifications");
 
   return (
@@ -56,7 +59,7 @@ export function SettingsClient({ account, settings, prefs }: Props) {
         <div>
           {tab === "notifications" && <NotificationsTab initial={prefs} />}
           {tab === "account"       && <AccountTab account={account} settings={settings} />}
-          {tab === "users"         && <PlaceholderTab title="Users & Access" />}
+          {tab === "users"         && <UsersTab users={users} currentUserId={currentUserId} />}
           {tab === "compliance"    && <PlaceholderTab title="Compliance Automation" />}
           {tab === "integrations"  && <PlaceholderTab title="Integrations" />}
         </div>
@@ -250,6 +253,68 @@ function AccountTab({
           {pending ? "Saving…" : "Save changes"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function UsersTab({
+  users,
+  currentUserId,
+}: {
+  users:         PortalAccountUser[];
+  currentUserId: string;
+}) {
+  return (
+    <div className="sb2">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h4>Users &amp; Access</h4>
+          <div className="sd">Everyone in your account who can sign in to the portal.</div>
+        </div>
+        <button className="btn btn-g btn-sm" disabled title="Inviting users ships in the next release">
+          + Invite user
+        </button>
+      </div>
+      {users.length === 0 ? (
+        <div className="empty"><div className="ic-lg">·</div><div className="t">No users in this account</div></div>
+      ) : (
+        <table className="tbl" style={{ marginTop: 6 }}>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Last sign-in</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td>
+                  <div className="b">
+                    {u.full_name || "—"}
+                    {u.id === currentUserId && (
+                      <span className="pill n" style={{ marginLeft: 6 }}>You</span>
+                    )}
+                  </div>
+                </td>
+                <td style={{ fontSize: 12 }}>{u.email}</td>
+                <td className="mono mu">
+                  {u.last_signed_in_at
+                    ? new Date(u.last_signed_in_at).toLocaleDateString("en-GB")
+                    : "Never"}
+                </td>
+                <td>
+                  <span className={`pill ${u.is_active ? "ok" : "n"}`}>
+                    <span className="d" />
+                    {u.is_active ? "Active" : "Inactive"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

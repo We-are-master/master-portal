@@ -1,5 +1,6 @@
 import { requirePortalUserOrRedirect } from "@/lib/portal-auth";
 import { fetchLiveViewCalendar } from "@/lib/server-fetchers/portal-live-view";
+import { fetchPortalTechnicians } from "@/lib/server-fetchers/portal-technicians";
 import { LiveViewClient } from "./live-view-client";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,16 @@ export default async function LiveViewPage() {
   const end = new Date(start);
   end.setDate(end.getDate() + 29);
 
-  const events = await fetchLiveViewCalendar(auth.accountId, isoDate(start), isoDate(end));
-  return <LiveViewClient events={events} fromDate={isoDate(start)} />;
+  const [events, technicians] = await Promise.all([
+    fetchLiveViewCalendar(auth.accountId, isoDate(start), isoDate(end)),
+    fetchPortalTechnicians(auth.accountId),
+  ]);
+
+  return (
+    <LiveViewClient
+      events={events}
+      fromDate={isoDate(start)}
+      technicians={technicians}
+    />
+  );
 }

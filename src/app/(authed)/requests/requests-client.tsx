@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { PortalQuoteRow } from "@/lib/server-fetchers/portal-quotes";
+import { Drawer, DrawerBody, DrawerFooter, DrawerHeader } from "@/components/portal/drawer";
+import type { PortalQuoteDetail, PortalQuoteRow } from "@/lib/server-fetchers/portal-quotes";
 import type { PortalRequestRow } from "@/lib/server-fetchers/portal-requests";
 
 type Tab = "open_requests" | "awaiting_quote" | "approved" | "rejected" | "all";
@@ -38,6 +39,7 @@ export function RequestsClient({ requests, quotes }: Props) {
   const sp = useSearchParams();
   const initialTab = (sp.get("tab") as Tab) || "open_requests";
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [openQuoteId, setOpenQuoteId] = useState<string | null>(sp.get("id"));
 
   const openRequests   = useMemo(() => requests.filter((r) => ["new", "in_review", "qualified"].includes(r.status)), [requests]);
   const awaitingQuotes = useMemo(() => quotes.filter((q) => q.status === "awaiting_customer"),                       [quotes]);
@@ -100,19 +102,154 @@ export function RequestsClient({ requests, quotes }: Props) {
 
       <div className="blk">
         {tab === "open_requests" && <RequestsTable rows={openRequests} />}
-        {tab === "awaiting_quote" && <QuotesTable rows={awaitingQuotes} />}
-        {tab === "approved" && <QuotesTable rows={approvedQuotes} />}
-        {tab === "rejected" && <QuotesTable rows={rejectedQuotes} />}
+        {tab === "awaiting_quote" && <QuotesTable rows={awaitingQuotes} onOpen={setOpenQuoteId} />}
+        {tab === "approved" && <QuotesTable rows={approvedQuotes} onOpen={setOpenQuoteId} />}
+        {tab === "rejected" && <QuotesTable rows={rejectedQuotes} onOpen={setOpenQuoteId} />}
         {tab === "all" && (
           <>
             <div className="kk" style={{ padding: "12px 14px" }}>Open requests</div>
             <RequestsTable rows={openRequests} />
             <div className="kk" style={{ padding: "12px 14px", borderTop: "1px solid var(--ln)" }}>Quotes</div>
-            <QuotesTable rows={quotes} />
+            <QuotesTable rows={quotes} onOpen={setOpenQuoteId} />
           </>
         )}
       </div>
+
+      {openQuoteId && (
+        <QuoteDrawer quoteId={openQuoteId} onClose={() => setOpenQuoteId(null)} />
+      )}
     </div>
+  );
+}
+
+function QuoteDrawer({ quoteId, onClose }: { quoteId: string; onClose: () => void }) {
+  const [detail, setDetail] = useState<PortalQuoteDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDetail(null);
+    setError(null);
+    fetch(`/api/quotes/${encodeURIComponent(quoteId)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        if (j?.quote) setDetail(j.quote as PortalQuoteDetail);
+        else setError(j?.error ?? "Could not load quote");
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    return () => { cancelled = true; };
+  }, [quoteId]);
+
+  return (
+    <Drawer open={true} onClose={onClose}>
+      <DrawerHeader
+        title={detail?.title ?? "Loading…"}
+        meta={detail ? `${detail.reference} · ${detail.client_name}` : undefined}
+        onClose={onClose}
+      />
+      <DrawerBody>
+        {error && (
+          <div className="empty">
+            <div className="ic-lg">!</div>
+            <div className="t">{error}</div>
+          </div>
+        )}
+        {!detail && !error && (
+          <div className="bb"><span style={{ fontSize: 12, color: "var(--s50)" }}>Loading quote…</span></div>
+        )}
+        {detail && (
+          <>
+            <div className="kg">
+              <div className="kpi">
+                <div className="lbl">Total</div>
+                <div className="val">{formatGBP(Number(detail.total_value ?? 0))}</div>
+                <div className="tr flat">Inc. VAT</div>
+              </div>
+              <div className="kpi">
+                <div className="lbl">Deposit</div>
+                <div className="val">{detail.deposit_required > 0 ? formatGBP(Number(detail.deposit_required)) : "—"}</div>
+                <div className="tr flat">{detail.deposit_required > 0 ? "Required" : "None"}</div>
+              </div>
+              <div className="kpi">
+                <div className="lbl">Status</div>
+                <div className="val" style={{ fontSize: 14, fontWeight: 500 }}>
+                  {(QUOTE_STATUS[detail.status] ?? { l: detail.status }).l}
+                </div>
+                <div className="tr flat">{detail.partner_name ?? "—"}</div>
+              </div>
+            </div>
+
+            {detail.email_custom_message && (
+              <div className="blk" style={{ marginTop: 12 }}>
+                <div className="bh"><h3>Message from Master</h3></div>
+                <div className="bb">
+                  <p style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+                    {detail.email_custom_message}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {detail.scope && (
+              <div className="blk" style={{ marginTop: 12 }}>
+                <div className="bh"><h3>Scope of work</h3></div>
+                <div className="bb">
+                  <p style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+                    {detail.scope}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {detail.line_items.length > 0 && (
+              <div className="blk" style={{ marginTop: 12 }}>
+                <div className="bh"><h3>Line items</h3></div>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Description</th>
+                      <th style={{ textAlign: "right", width: 60 }}>Qty</th>
+                      <th style={{ textAlign: "right", width: 80 }}>Unit</th>
+                      <th style={{ textAlign: "right", width: 90 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.line_items.map((li) => (
+                      <tr key={li.id}>
+                        <td>{li.description}</td>
+                        <td className="mono mu" style={{ textAlign: "right" }}>{li.quantity}</td>
+                        <td className="mono mu" style={{ textAlign: "right" }}>{formatGBP(Number(li.unit_price))}</td>
+                        <td className="mono b" style={{ textAlign: "right" }}>{formatGBP(Number(li.total))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3} style={{ textAlign: "right", fontWeight: 500 }}>Total</td>
+                      <td className="mono b" style={{ textAlign: "right" }}>
+                        {formatGBP(Number(detail.total_value ?? 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </DrawerBody>
+      <DrawerFooter>
+        <button className="btn btn-g btn-sm" onClick={onClose}>Close</button>
+        {detail?.status === "awaiting_customer" && (
+          <>
+            <button className="btn btn-rd btn-sm">Reject</button>
+            <button className="btn btn-p btn-sm">Approve</button>
+          </>
+        )}
+      </DrawerFooter>
+    </Drawer>
   );
 }
 
@@ -152,7 +289,7 @@ function RequestsTable({ rows }: { rows: PortalRequestRow[] }) {
   );
 }
 
-function QuotesTable({ rows }: { rows: PortalQuoteRow[] }) {
+function QuotesTable({ rows, onOpen }: { rows: PortalQuoteRow[]; onOpen: (id: string) => void }) {
   if (rows.length === 0) {
     return <div className="empty"><div className="ic-lg">·</div><div className="t">No items</div></div>;
   }
@@ -171,7 +308,7 @@ function QuotesTable({ rows }: { rows: PortalQuoteRow[] }) {
         {rows.map((q) => {
           const s = QUOTE_STATUS[q.status] ?? { l: q.status, cls: "n" };
           return (
-            <tr key={q.id}>
+            <tr key={q.id} onClick={() => onOpen(q.id)} style={{ cursor: "pointer" }}>
               <td>
                 <div className="b">{q.title}</div>
                 <div className="mu mono">{q.reference}</div>
