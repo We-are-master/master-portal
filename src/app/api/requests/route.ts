@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
@@ -211,6 +212,17 @@ export async function POST(req: NextRequest) {
       .update({ images: imageUrls })
       .eq("id", newRequestId);
   }
+
+  // Audit trail (best-effort, non-blocking)
+  void logPortalAudit({
+    entityType: "request",
+    entityId:   newRequestId,
+    entityRef:  reference,
+    action:     "created",
+    userId:     portalUser.id,
+    userName:   portalUser.full_name ?? portalUser.email,
+    metadata:   { service_type: serviceType, image_count: imageUrls.length, has_desired_date: Boolean(desiredDate) },
+  });
 
   // ─── Notify hello@wearemaster.com ────────────────────────────────────
   try {

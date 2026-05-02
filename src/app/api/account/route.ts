@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +41,15 @@ function pickAllowed(input: Record<string, unknown>): Record<string, unknown> {
 export async function PATCH(req: NextRequest) {
   const auth = await requirePortalUser();
   if (auth instanceof NextResponse) return auth;
+
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`portal-acct-patch:${auth.user.id}:${ip}`, 10, 60 * 60 * 1000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   let body: Record<string, unknown>;
   try {
@@ -89,6 +100,16 @@ export async function PATCH(req: NextRequest) {
     console.error("[portal/account/PATCH] update failed:", error);
     return NextResponse.json({ error: "We could not save your changes. Please try again." }, { status: 500 });
   }
+
+  // Audit trail (best-effort, non-blocking)
+  void logPortalAudit({
+    entityType: "account",
+    entityId:   auth.accountId,
+    action:     "updated",
+    userId:     auth.portalUser.id,
+    userName:   auth.portalUser.full_name ?? auth.portalUser.email,
+    metadata:   { fields: Object.keys(safePatch) },
+  });
 
   return NextResponse.json({ ok: true });
 }

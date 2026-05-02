@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { logPortalAudit } from "@/lib/portal-audit";
 import { requirePortalUser } from "@/lib/portal-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
@@ -96,6 +97,17 @@ export async function POST(
     updated_at: new Date().toISOString(),
     ...(ticketStatus === "resolved" ? { status: "open" } : {}),
   }).eq("id", ticketId);
+
+  // Audit trail (best-effort, non-blocking)
+  void logPortalAudit({
+    entityType: "ticket",
+    entityId:   ticketId,
+    entityRef:  t.reference,
+    action:     "note",
+    userId:     portalUser.id,
+    userName:   portalUser.full_name ?? portalUser.email,
+    metadata:   { attachment_count: attachments.length, reopened: ticketStatus === "resolved" },
+  });
 
   // Return immediately — don't block the user waiting for emails.
   const response = NextResponse.json({ ok: true });

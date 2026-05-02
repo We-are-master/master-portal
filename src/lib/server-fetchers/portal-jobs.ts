@@ -1,4 +1,10 @@
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { clampPageSize, decodeCursor, nextCursorFrom, type Page } from "./cursor";
+
+export interface PortalListOpts {
+  cursor?: string;
+  limit?:  number;
+}
 
 export interface PortalJobRow {
   id:               string;
@@ -7,6 +13,7 @@ export interface PortalJobRow {
   status:           string;
   scheduled_date:   string | null;
   scheduled_start_at: string | null;
+  property_id:      string | null;
   property_address: string | null;
   partner_name:     string | null;
   current_phase:    number | null;
@@ -19,8 +26,17 @@ export interface PortalJobDetail extends PortalJobRow {
   client_price: number;
 }
 
-export async function fetchAccountJobs(accountId: string): Promise<PortalJobRow[]> {
+/**
+ * Returns one page of jobs for an account, ordered by most recent first.
+ * Keyset pagination on (created_at DESC, id DESC).
+ */
+export async function fetchAccountJobs(
+  accountId: string,
+  opts: PortalListOpts = {},
+): Promise<Page<PortalJobRow>> {
   const supabase = await getServerSupabase();
+  const limit  = clampPageSize(opts.limit);
+  const cursor = decodeCursor(opts.cursor);
 
   const { data: clientRows } = await supabase
     .from("clients")
@@ -29,21 +45,31 @@ export async function fetchAccountJobs(accountId: string): Promise<PortalJobRow[
     .is("deleted_at", null)
     .limit(1000);
   const clientIds = ((clientRows ?? []) as Array<{ id: string }>).map((c) => c.id);
-  if (clientIds.length === 0) return [];
+  if (clientIds.length === 0) return { items: [], nextCursor: null };
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("jobs")
     .select(`
       id, reference, title, status, scheduled_date, scheduled_start_at,
-      property_address, partner_name, current_phase, total_phases, created_at
+      property_id, property_address, partner_name, current_phase,
+      total_phases, created_at
     `)
     .in("client_id", clientIds)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .order("id", { ascending: false })
+    .limit(limit);
 
-  if (error || !data) return [];
-  return data as PortalJobRow[];
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.value},and(created_at.eq.${cursor.value},id.lt.${cursor.id})`,
+    );
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return { items: [], nextCursor: null };
+  const items = data as PortalJobRow[];
+  return { items, nextCursor: nextCursorFrom(items, "created_at", limit) };
 }
 
 /**
@@ -59,8 +85,8 @@ export async function fetchPortalJobDetail(
     .from("jobs")
     .select(`
       id, reference, title, status, scheduled_date, scheduled_start_at,
-      property_address, partner_name, current_phase, total_phases,
-      scope, client_price, client_id, created_at
+      property_id, property_address, partner_name, current_phase,
+      total_phases, scope, client_price, client_id, created_at
     `)
     .eq("id", jobId)
     .is("deleted_at", null)
@@ -88,6 +114,7 @@ export async function fetchPortalJobDetail(
     status:             (j.status as string) ?? "",
     scheduled_date:     (j.scheduled_date as string | null) ?? null,
     scheduled_start_at: (j.scheduled_start_at as string | null) ?? null,
+    property_id:        (j.property_id as string | null) ?? null,
     property_address:   (j.property_address as string | null) ?? null,
     partner_name:       (j.partner_name as string | null) ?? null,
     current_phase:      (j.current_phase as number | null) ?? null,

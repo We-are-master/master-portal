@@ -1,4 +1,5 @@
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { clampPageSize, decodeCursor, nextCursorFrom, type Page } from "./cursor";
 
 export interface PortalTicketRow {
   id:           string;
@@ -44,22 +45,47 @@ export interface PortalTicketDetail {
   }>;
 }
 
-/**
- * Returns all tickets for an account, ordered by most recent first.
- * Joins the most recent message's created_at for the "last message" column,
- * and the job reference when linked.
- */
-export async function fetchAccountTickets(accountId: string): Promise<PortalTicketRow[]> {
-  const supabase = await getServerSupabase();
+export interface PortalListOpts {
+  cursor?: string;
+  limit?:  number;
+}
 
-  const { data: tickets, error } = await supabase
+/**
+ * Returns one page of tickets for an account, ordered by most recently
+ * updated first. Keyset pagination on (updated_at DESC, id DESC) — the
+ * caller passes the previous page's `nextCursor` to load the next.
+ *
+ * Joins the most recent message's created_at for the "last message"
+ * column, and the job reference when linked.
+ */
+export async function fetchAccountTickets(
+  accountId: string,
+  opts: PortalListOpts = {},
+): Promise<Page<PortalTicketRow>> {
+  const supabase = await getServerSupabase();
+  const limit  = clampPageSize(opts.limit);
+  const cursor = decodeCursor(opts.cursor);
+
+  let query = supabase
     .from("tickets")
     .select("id, reference, subject, type, priority, status, job_id, created_at, updated_at")
     .eq("account_id", accountId)
     .order("updated_at", { ascending: false })
-    .limit(200);
+    .order("id", { ascending: false })
+    .limit(limit);
 
-  if (error || !tickets) return [];
+  if (cursor) {
+    // Keyset predicate: rows with smaller (updated_at, id) than the
+    // last seen row. Postgres handles compound tuple comparison
+    // natively, but supabase-js doesn't expose it — so we OR-split.
+    query = query.or(
+      `updated_at.lt.${cursor.value},and(updated_at.eq.${cursor.value},id.lt.${cursor.id})`,
+    );
+  }
+
+  const { data: tickets, error } = await query;
+
+  if (error || !tickets) return { items: [], nextCursor: null };
 
   const rows = tickets as Array<{
     id: string; reference: string; subject: string; type: string;
@@ -100,11 +126,16 @@ export async function fetchAccountTickets(accountId: string): Promise<PortalTick
     if (!lastMsgMap.has(m.ticket_id)) lastMsgMap.set(m.ticket_id, m.created_at);
   }
 
-  return rows.map((t) => ({
+  const items: PortalTicketRow[] = rows.map((t) => ({
     ...t,
     job_reference:   t.job_id ? (jobRefMap.get(t.job_id) ?? null) : null,
     last_message_at: lastMsgMap.get(t.id) ?? null,
   }));
+
+  return {
+    items,
+    nextCursor: nextCursorFrom(items, "updated_at", limit),
+  };
 }
 
 /**
