@@ -211,7 +211,7 @@ export function PortalLoginClient() {
 
               <p style={{ fontSize: 11, color: "var(--slate-50)", textAlign: "center", marginTop: 16 }}>
                 Don&rsquo;t have an account?{" "}
-                <a href="mailto:hello@wearemaster.com" style={{ color: "var(--coral-600)", fontWeight: 500 }}>Contact us</a>
+                <a href="/signup" style={{ color: "var(--coral-600)", fontWeight: 500 }}>Sign up</a>
               </p>
             </form>
           )}
