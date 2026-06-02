@@ -16,6 +16,7 @@
  */
 
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export interface PortalPhaseEvent {
   /** Status the job transitioned to (e.g. in_progress_phase1) */
@@ -207,7 +208,9 @@ export async function fetchPortalJobDetailRich(
       .maybeSingle(),
 
     partnerId
-      ? supabase.from("partners").select("avatar_url").eq("id", partnerId).maybeSingle()
+      ? // Service client: partners is RLS-scoped to staff/own-partner, but the
+        // portal client is authorised to see this job's assigned partner avatar.
+        createServiceClient().from("partners").select("avatar_url").eq("id", partnerId).maybeSingle()
       : Promise.resolve({ data: null } as { data: null }),
 
     // Tickets linked to this job. RLS (migration 142) already scopes to the

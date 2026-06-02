@@ -1,4 +1,5 @@
 import { getServerSupabase } from "@/lib/supabase/server-cached";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export interface PortalTechnicianPin {
   user_id:    string;
@@ -55,7 +56,10 @@ export async function fetchPortalTechnicians(accountId: string): Promise<PortalT
   if (partnerIds.length === 0) return [];
 
   // 3. partner → auth_user_id mapping
-  const { data: partners } = await supabase
+  // Service client: partners is RLS-scoped to staff/own-partner, but these
+  // partner ids come from this account's active jobs, so the portal is
+  // authorised to resolve their name + tracking user id.
+  const { data: partners } = await createServiceClient()
     .from("partners")
     .select("id, auth_user_id, company_name")
     .in("id", partnerIds);
